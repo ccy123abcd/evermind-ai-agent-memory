@@ -1,0 +1,30 @@
+# TXJ Tiered Memory — config 示例
+# 复制为 config.yaml 后填写您的实际路径。
+
+memory_root: /path/to/your/memory/vault   # 记忆根目录(本脚本只读这里列出的文件)
+
+# L3 必读层:每次会话都读的核心文件(描述用中文或英文均可,显示名仅用于阅读)
+must_read:
+  - path: /path/to/your/memory/vault/identity.md
+    name: 身份与规则
+  - path: /path/to/your/memory/vault/user-profile.md
+    name: 用户档案
+  - path: /path/to/your/memory/vault/todos.md
+    name: 最新待办
+
+# L2 条件读层:变更检测清单(脚本为每个文件算哈希,变了才标 ✅)
+tracked_files:
+  - path: /path/to/your/memory/vault/team-config.md
+    name: 团队配置
+    desc: 成员/分工/工作流
+  - path: /path/to/your/memory/vault/assistant-role.md
+    name: 助手角色
+    desc: 定位/边界
+  - path: /path/to/your/memory/vault/skills-list.md
+    name: 能力清单
+    desc: 技能/工具/权限
+
+# 输出位置(默认:config.yaml 同目录下)
+output_dir: .            # 留空 = 与 config.yaml 同目录
+output_index: memory_index.md
+output_state: memory_index_state.json
