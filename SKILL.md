@@ -1,5 +1,5 @@
 ---
-name: evermind
+name: evermind-ai-agent-memory
 version: 0.1.1
 description: Use when starting a new session and the assistant needs to recall who the user is and where work left off. Tiered progressive memory recovery — always read the core layer, check an auto-generated change index before re-reading secondary files, defer the rest until needed. Cuts recovery token cost ~70% versus reading everything every session (85%+ when the host already injects identity memory).
 author: Evermind

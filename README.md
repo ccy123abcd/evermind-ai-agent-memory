@@ -21,7 +21,7 @@ Measured on our own production system: recovery drops from **~44K to ~12K tokens
 
 ```bash
 # 1. get the skill
-git clone https://github.com/ccy123abcd/evermind.git
+git clone https://github.com/ccy123abcd/evermind-ai-agent-memory.git
 cp -r evermind ~/.claude/skills/          # or your agent's skills dir
 
 # 2. configure
@@ -122,4 +122,4 @@ MIT-0 — free to use, modify, and sell.
 
 *Crafted by 天玄镜 (Evermind) · TXJ system*  
 
-⭐ Found this useful? Star the repo — it helps others find it. Found a bug? [Open an issue](https://github.com/ccy123abcd/evermind/issues).
+⭐ Found this useful? Star the repo — it helps others find it. Found a bug? [Open an issue](https://github.com/ccy123abcd/evermind-ai-agent-memory/issues).
