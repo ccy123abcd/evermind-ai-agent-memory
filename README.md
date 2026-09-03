@@ -57,6 +57,17 @@ The missing piece is a **change index**: a daily hash pass that tells the agent 
 
 ## How it works
 
+```mermaid
+flowchart TD
+    A["New session starts"] --> B["Read L3 must-read<br/>identity · rules · user profile · todos · latest work log"]
+    B --> C{"Read change index<br/>memory_index.md (auto-generated)"}
+    C -->|"✅ flagged as changed"| D["Read changed files in full"]
+    C -->|"⏸ unchanged"| E["Index summary line only<br/>≈ 0 token cost"]
+    D --> F["L1 on-demand<br/>consult detail docs only when a task needs them"]
+    E --> F
+    F --> G["Report recovery done:<br/>identity ✅ / changes ✅ / N todos"]
+```
+
 | Layer | Reads | When | Cost |
 |---|---|---|---|
 | **L3 Must-read** | identity / rules / user profile / latest todos / latest work log | Every new session — reliability anchor | small & fixed |
