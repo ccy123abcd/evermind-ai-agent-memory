@@ -1,30 +1,33 @@
-# TXJ Tiered Memory — config 示例
-# 复制为 config.yaml 后填写您的实际路径。
+# Evermind — example configuration
+# Copy to config.yaml and point at your actual memory files.
 
-memory_root: /path/to/your/memory/vault   # 记忆根目录(本脚本只读这里列出的文件)
+memory_root: /path/to/your/memory/vault   # memory root (the script only reads files listed below)
 
-# L3 必读层:每次会话都读的核心文件(描述用中文或英文均可,显示名仅用于阅读)
+# L3 must-read layer: core files read at the start of EVERY session.
+# name is display-only (any language).
 must_read:
   - path: /path/to/your/memory/vault/identity.md
-    name: 身份与规则
+    name: Identity & rules
   - path: /path/to/your/memory/vault/user-profile.md
-    name: 用户档案
+    name: User profile
   - path: /path/to/your/memory/vault/todos.md
-    name: 最新待办
+    name: Todo list
+  - path: /path/to/your/memory/vault/work-log/latest.md
+    name: Latest work log
 
-# L2 条件读层:变更检测清单(脚本为每个文件算哈希,变了才标 ✅)
+# L2 change-tracked layer: secondary files re-read ONLY when the index flags a change.
+# Each entry: path / display name / one-line description of when it matters.
 tracked_files:
-  - path: /path/to/your/memory/vault/team-config.md
-    name: 团队配置
-    desc: 成员/分工/工作流
-  - path: /path/to/your/memory/vault/assistant-role.md
-    name: 助手角色
-    desc: 定位/边界
-  - path: /path/to/your/memory/vault/skills-list.md
-    name: 能力清单
-    desc: 技能/工具/权限
+  - path: /path/to/your/memory/vault/roles/assistant-role.md
+    name: Assistant role
+    note: read in full only when role definitions change
+  - path: /path/to/your/memory/vault/projects/active.md
+    name: Active projects
+    note: read when project state matters to the current task
+  - path: /path/to/your/memory/vault/configs/settings.md
+    name: Tool settings
+    note: consult before installing or reconfiguring tools
 
-# 输出位置(默认:config.yaml 同目录下)
-output_dir: .            # 留空 = 与 config.yaml 同目录
-output_index: memory_index.md
-output_state: memory_index_state.json
+# Where the generated index + state file are written (defaults to the script directory).
+# index_output: memory_index.md
+# state_output: memory_index_state.json

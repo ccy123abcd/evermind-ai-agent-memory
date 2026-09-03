@@ -1,54 +1,125 @@
-# TXJ Tiered Memory · 跨会话记忆恢复
+# Evermind
 
-> 您的 AI 助手,终于记得住事了。
-> 每次新会话都像"第一天上班"?TXJ Tiered Memory 让 AI 开工前自动"接过交接班记录"——知道自己是谁、活儿干到哪、什么事不能忘。**省心,不丢事**;顺带恢复成本降 ~70%(高频自动化场景更省 ~85%)。
+**Cross-session memory recovery for AI agents. Stop your assistant from forgetting — without re-reading everything every session.**
 
-## 它帮您达成
+![version](https://img.shields.io/badge/version-0.1.1-blue)
+![license](https://img.shields.io/badge/license-MIT--0-green)
+![platform](https://img.shields.io/badge/platform-Hermes%20%7C%20Claude%20Code%20%7C%20Cursor%20%7C%20OpenClaw-lightgrey)
+![deps](https://img.shields.io/badge/deps-zero-orange)
 
-- 🧠 **跨会话不失忆,不丢事**:该记得的永远记得——身份/规则/待办每次必读,一个不落;新会话自动续上,不用手动交代背景
-- ⚡ **恢复快 + 省 token**:L3 必读 + L2 只看变更索引(哈希检测,没变的文件不重读全文)——恢复从 ~44K 降到 ~12K(省 70%);若宿主已注入身份记忆(如 Hermes 平台),自动跳过重复读取,再省 ~45-50%(累计省 85%+)
-- 🔒 **数据全在本地**:纯本地脚本,零 API 成本,隐私不碰云
-- 🗺️ **Roadmap(托管版)**:用户画像自动沉淀 / 偏好学习 / 跨设备同步
+Every new session feels like "day one at work"? Your agent doesn't know who you are, what the rules are, or where work left off — so you re-explain everything, and it still drops things.
 
-## 它怎么做到(原理,一分钟看懂)
+Evermind hands your agent a **shift handover** before it starts working:
 
-| 层 | 读什么 | 何时读 | 成本 |
+- **Always reads** the core layer — identity, rules, user profile, latest todos, latest work log (nothing important silently dropped)
+- **Checks a change index** (auto-generated, hash-based) before re-reading secondary files — unchanged files cost ~0
+- **Defers everything else** until it is actually needed
+
+Measured on our own production system: recovery drops from **~44K to ~12K tokens** (~70% less). When the host already injects identity memory (e.g. Hermes), the duplicated read is skipped automatically — **up to 85%+ total savings**.
+
+## Quick start
+
+```bash
+# 1. get the skill
+git clone https://github.com/ccy123abcd/evermind.git
+cp -r evermind ~/.claude/skills/          # or your agent's skills dir
+
+# 2. configure
+cd evermind && cp config.example.yaml config.yaml
+#   edit config.yaml: memory_root + must_read (L3) + tracked_files (L2)
+
+# 3. generate the change index (schedule it daily)
+python scripts/memory_index.py --config config.yaml
+
+# 4. self-test (3 scenarios: first run / unchanged / changed)
+python scripts/memory_index.py --config config.yaml --demo
+```
+
+Then, at the start of each new session, instruct your agent to follow `SKILL.md` (or wire it into a session-reset hook for Hermes).
+
+## Platform support
+
+| Platform | How to use |
+|---|---|
+| **Hermes** (Nous Research) | Drop into the agent's `skills/` directory; invoke "recover memory" per session or wire SKILL.md into a session-reset hook. Hermes injects SOUL/MEMORY/USER automatically — the skill detects host-injected identity and skips duplicate reads (the 85%+ case). |
+| **ClawHub / OpenClaw** | Dual-compatible frontmatter (standard + `metadata.hermes`). Install into the skills directory or via your hub client. |
+| **Claude Code / Cursor / Codex** | Copy the folder into the project or agent skills directory (`~/.claude/skills/`, etc.); instruct the agent to follow SKILL.md at session start. |
+| **Any LLM, any OS** | Recovery logic is pure convention + one Python stdlib script — model-agnostic; Windows / macOS / Linux; no GPU. |
+
+## Why not just another memory plugin?
+
+Existing memory/marketplace skills are mostly about **storing** memories. Nobody solves **cheap, reliable recovery**:
+
+- Naive recovery = re-read everything → expensive (44K tokens per session adds up fast on API pricing)
+- "Trust the model to remember" = gamble → it forgets, and you don't know what it forgot
+
+The missing piece is a **change index**: a daily hash pass that tells the agent *what actually changed* since the last session. With it, recovery is **neither expensive nor risky**. That index is what this skill automates (`scripts/memory_index.py`, pure stdlib, ~0 cost).
+
+## How it works
+
+| Layer | Reads | When | Cost |
 |---|---|---|---|
-| L3 必读 | 身份/合作规则/用户档案/最新待办/最新工作日志 | 每次新会话,缺一不可 | 固定的少量文件 |
-| L2 条件读 | 次级档案(角色/成员/配置) | **先看自动生成的变更索引**:标 ✅ 才读全文,⏸ 只读摘要行 | 多数时候≈0 ← 省钱在这 |
-| L1 按需 | 细节文档/历史记录 | 用到才查 | 0 |
+| **L3 Must-read** | identity / rules / user profile / latest todos / latest work log | Every new session — reliability anchor | small & fixed |
+| **L2 Conditional** | secondary files (roles, members, configs) | **Only if the auto-generated index flags a change**; otherwise just the index summary line | ≈0 ← savings live here |
+| **L1 On-demand** | detail docs / history | Only when actually needed | 0 |
 
-机关 = `scripts/memory_index.py`:每天跑一次(可挂 cron/定时任务),给每个 L2 文件算哈希,变了才标 ✅。它让"先看摘要再决定读不读全文"成为可能——**没有索引,L2 要么全读(贵)要么赌运气不读(会漏),有了索引,既不贵又不漏**。
+`scripts/memory_index.py` hashes every L2-tracked file (md5 + 24h freshness window) and writes a human-readable `memory_index.md`. No index → all-or-nothing. With an index → read the few files that changed.
 
-## 安装(3 步,约 5 分钟)
+> Honest numbers: ~12K is our measured tiered-recovery cost vs ~44K naive. ~6.5K is a projection for hosts that already inject identity (44K → 12K → 6.5K = ~85% cumulative). Highest-value users: heavy multi-session automation (many sessions/day).
 
-1. **下载本技能目录**到您的 agent skills 目录(或 `git clone` + 放入 skills/ 路径)
-2. **配置**:复制 `config.example.yaml` → `config.yaml`,填您的记忆文件路径(必读清单 + 变更检测清单)
-3. **生成索引**并加定时:
-   ```bash
-   python scripts/memory_index.py --config config.yaml
-   # 建议每天跑一次(Windows 任务计划/macOS crontab/Linux cron 均可)
-   ```
+## Configuration
 
-**之后每次新会话**,把 SKILL.md 交给您的 agent(或按 SKILL.md 内流程操作),agent 就会按三层法恢复记忆。
+Copy `config.example.yaml` → `config.yaml`:
 
-## 最低要求
+- `memory_root` — root of your memory files
+- `must_read` — L3 files, read in full every session
+- `tracked_files` — L2 files, change-tracked (path / display name / one-line description)
 
-- 一台电脑(Windows/macOS/Linux 均可,普通办公配置,无需 GPU)
-- 记忆文件(建议用 Obsidian 知识库管理,免费;纯文件夹也可以,脚本只认路径)
-- 模型:接任意 LLM(OpenAI/DeepSeek/本地 Ollama 均可)——恢复逻辑与模型无关
+Outputs: `memory_index.md` (readable) + `memory_index_state.json` (state — don't hand-edit).
 
-## 不想自己配?
+## Usage protocol (start of every new session)
 
-免费版 = 自己动手的最小闭环(约 5 分钟);
-托管版 = 开箱即用 + 完整体系 + 持续更新(省心/稳定/有保障)。→ **官方托管版入口:[填写]**
+1. Read the L3 must-read files — every one, no shortcuts.
+2. Read `memory_index.md`:
+   - ✅ new change → read that file in full
+   - ⏸ unchanged → index summary line only
+3. Consult L1 detail docs only when a task needs them.
+4. Report recovery done (identity ✅ / changes ✅ / N todos) so the user can confirm.
 
-## 安全声明
+## Repository layout
 
-- 只读您在 config.yaml 里指定的文件;不写记忆文件本体(只写索引 md + 状态 json)
-- 不上传任何数据到外网,纯本地运行,无远程管道安装、无脚本直灌执行
-- 脚本仅使用 Python 标准库,零第三方依赖(有 PyYAML 则用之,无则自动降级)
+```
+evermind/
+├── SKILL.md                 # agent-facing instructions (progressive disclosure)
+├── README.md                # this file
+├── config.example.yaml      # configuration template
+├── scripts/
+│   └── memory_index.py      # change-index generator (pure stdlib, zero deps)
+├── CHANGELOG.md
+├── LICENSE                  # MIT-0
+└── version
+```
 
-## 许可
+## Security
 
-MIT-0(发布到 ClawHub 的技能统一 MIT-0,可自由使用/修改/商用)
+- Reads only files listed in your `config.yaml`; never writes memory files themselves (only index md + state json)
+- Nothing leaves your machine — no remote install pipelines, no script-to-shell execution
+- Python standard library only (PyYAML used if present, graceful degradation without)
+
+## Roadmap (managed edition)
+
+- Auto user-profiling (preferences / habits)
+- Cross-device sync + web console
+- One-click deploy
+
+**Don't want to self-configure?** The managed edition = zero-setup, full system, continuous updates. → [Managed edition: TBD]
+
+## License
+
+MIT-0 — free to use, modify, and sell.
+
+---
+
+*Crafted by 天玄镜 (Evermind) · TXJ system*  
+
+⭐ Found this useful? Star the repo — it helps others find it. Found a bug? [Open an issue](https://github.com/ccy123abcd/evermind/issues).

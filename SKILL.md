@@ -1,69 +1,86 @@
 ---
-name: txj-tiered-memory
-version: 0.1.0
-description: Use when starting a new session and the assistant needs to recall who the user is and where work left off. Tiered progressive memory recovery — always read the core layer, check an auto-generated change index before re-reading secondary files, defer the rest until needed. Cuts recovery token cost ~70% versus reading everything every session.
-author: TXJ
-license: MIT
+name: evermind
+version: 0.1.1
+description: Use when starting a new session and the assistant needs to recall who the user is and where work left off. Tiered progressive memory recovery — always read the core layer, check an auto-generated change index before re-reading secondary files, defer the rest until needed. Cuts recovery token cost ~70% versus reading everything every session (85%+ when the host already injects identity memory).
+author: Evermind
+license: MIT-0
 metadata:
   hermes:
-    tags: [memory, recovery, session, onboarding]
+    tags: [memory, recovery, session, onboarding, context]
     related_skills: []
 ---
 
-# TXJ Tiered Memory (三层渐进记忆恢复)
+# Evermind
 
-> 让 AI 助手跨会话不失忆,恢复成本直降 ~70%。
-> 每次新会话都要从头"认识"一遍?本技能用三层渐进法恢复记忆——**只读真正重要的,跳过没变的,用到才查细节**。
+Progressive memory recovery for AI agents: your assistant stops losing context between sessions, without re-reading everything every time.
 
-## What this does
+Every new session feels like "day one at work"? This skill hands the agent a **shift handover**: it always reads what matters (identity, rules, todos, latest work log), checks an auto-generated **change index** before re-reading secondary files, and defers everything else until actually needed.
 
-| Layer | 读什么 | 何时读 |
-|---|---|---|
-| **L3 必读** | 身份/合作规则/用户档案/最新待办/最新工作日志 | 每次新会话,缺一不可(可靠性的锚) |
-| **L2 条件读** | 次级档案(角色定义/成员配置/扩展档案) | 先看**自动生成的变更索引**,标"有新变更"才读全文,没变只读索引摘要行 |
-| **L1 按需** | 细节文档(技术清单/历史日志) | 用到才查,不用不读 |
+## Platform support
 
-配套机制:**变更索引自动生成脚本**(纯本地,零 API 成本,哈希幂等)——它让 L2 层"先看摘要再决定读不读全文"成为可能,这就是省 ~70% token 的机关。
+| Platform | How to use |
+|---|---|
+| **Hermes** (Nous Research) | Drop this folder into the agent's `skills/` directory. On each new session say "recover memory" (or wire the SKILL.md procedure into a session-reset hook). Hermes injects SOUL/MEMORY/USER automatically — the skill detects host-injected identity and skips duplicate reads (the 85%+ savings case). |
+| **ClawHub / OpenClaw** | Frontmatter is dual-compatible (standard fields + `metadata.hermes`). Install via `clawhub install txj/tiered-memory` or copy into the agent's skills dir. |
+| **Claude Code / Cursor / Codex / other SKILL.md agents** | Copy this folder into the project or agent skills directory; at the start of a session, instruct the agent to follow SKILL.md (the procedure is model-agnostic). |
+| **Any LLM, any OS** | Recovery logic is pure convention + one Python stdlib script — model-agnostic, runs on Windows/macOS/Linux, no GPU. |
+
+## What it gives you
+
+- 🧠 **No more lost context**: identity, rules, todos always loaded — nothing important silently dropped; new sessions resume where you left off
+- ⚡ **Fast + cheap**: L3 always-read + L2 change-indexed reads (hash check — unchanged files are never re-read). ~44K → ~12K tokens per recovery (~70% less); with host-injected identity skipped, up to 85%+ total
+- 🔒 **100% local**: pure local scripts, zero API cost, nothing leaves your machine
+
+## How it works
+
+| Layer | Reads | When | Cost |
+|---|---|---|---|
+| **L3 Must-read** | identity / rules / user profile / latest todos / latest work log | Every new session — the reliability anchor | small, fixed |
+| **L2 Conditional** | secondary files (roles, members, configs) | **Only if the auto-generated change index flags a change**; otherwise just the index summary line | ≈0 ← savings live here |
+| **L1 On-demand** | detail docs / history | Only when actually needed | 0 |
+
+The engine is `scripts/memory_index.py`: run it daily (Task Scheduler / cron / launchd). It hashes every L2-tracked file and flags only what changed (md5 + 24h window). No index → you either re-read everything (expensive) or gamble (risky). With the index you get **neither**.
 
 ## Setup
 
-1. 把 `config.example.yaml` 复制为 `config.yaml`,填三处:
-   - `memory_root`:您的记忆文件根目录
-   - `must_read`:每次会话必读的文件清单(L3)
-   - `tracked_files`:需要变更检测的文件清单(L2,每项= 路径/显示名/一句话说明)
-2. 生成变更索引(可加定时任务,如每天一次):
+1. Copy `config.example.yaml` → `config.yaml` and fill in:
+   - `memory_root`: your memory files root
+   - `must_read`: L3 files read every session
+   - `tracked_files`: L2 files tracked for changes (path / display name / one-line description)
+2. Generate the index (schedule it, e.g. daily):
    ```bash
    python scripts/memory_index.py --config config.yaml
    ```
-   生成 `memory_index.md` + 状态文件(记住上次哈希)。
-3. 按您的记忆文件调整——必读清单在 `config.yaml` 的 `must_read` 填,变更检测清单在 `tracked_files` 填;恢复流程见下方 Usage。
+   Produces `memory_index.md` (human-readable) + `memory_index_state.json` (script state, don't hand-edit).
+3. Adjust lists to your own vault layout — must-read lives under `must_read`, change-tracked under `tracked_files`.
 
-## Usage(每次新会话开头)
+## Usage (start of every new session)
 
-1. **读 L3 必读清单**(您在 config 里指定的核心文件)——一个不落。
-2. **读变更索引** `memory_index.md`(脚本已生成):
-   - 标 ✅ 新变更 → 读该文件全文
-   - 标 ⏸ 未变更 → 只读摘要行,不读全文 ← **省钱在这里**
-3. **按需层**:之后任务碰到才查(如装机前查技术清单)。
-4. 汇报恢复结果(身份✅/变更✅/待办 N 条)——让用户确认恢复已执行。
+1. **Read the L3 must-read files** from your config — every one, no shortcuts.
+2. **Read the change index** `memory_index.md`:
+   - ✅ new change → read that file in full
+   - ⏸ unchanged → read only its index summary line ← **savings live here**
+3. **L1 on-demand**: consult detail docs only when a task actually needs them.
+4. **Report recovery done** (identity ✅ / changes ✅ / N todos) so the user can confirm recovery ran.
 
 ## Files
 
-- `scripts/memory_index.py` — 变更索引生成(纯标准库,零依赖;首次跑全标新变更,之后哈希没变就标未变更;24h 内改过的文件也标新变更)
-- `config.example.yaml` — 配置模板
-- 输出:`memory_index.md`(人读)+ `memory_index_state.json`(脚本状态,勿手改)
+- `scripts/memory_index.py` — change-index generator (pure stdlib, zero deps; first run flags everything new, then only real changes; files touched within 24h are also flagged)
+- `config.example.yaml` — configuration template
+- Outputs: `memory_index.md` + `memory_index_state.json`
 
 ## Security
 
-- 只读您在 config 里指定的记忆目录;不写记忆文件本体(只写索引和状态文件)
-- 不上传任何数据到外网,纯本地运行
-- 无远程管道安装、无脚本直灌执行;只读您在 config 里指定的记忆文件
-- 数据全在您自己的电脑上
+- Reads only files listed in your `config.yaml`; never writes memory files themselves (only index md + state json)
+- Nothing is uploaded anywhere — fully local, no remote install pipelines, no script-to-shell execution
+- Python standard library only (PyYAML used when present, graceful degradation without)
 
-## Roadmap(托管版提供)
+## Roadmap (managed edition)
 
-- 用户画像自动沉淀(偏好/习惯学习)
-- 跨设备同步与 Web 管理台
-- 一键部署(不想自己配环境?→ 官方托管版:开箱即用,持续更新)
+- Auto user-profiling (preferences / habits)
+- Cross-device sync + web console
+- One-click deploy — don't want to self-configure? Managed edition = zero-setup, full system, continuous updates. → [Managed edition entry: TBD]
 
-> 不想折腾配置?免费版 = 自己动手的最小闭环;托管版 = 开箱即用 + 完整体系 + 持续更新。→ [托管版入口]
+## License
+
+MIT-0 — free to use, modify, and sell.

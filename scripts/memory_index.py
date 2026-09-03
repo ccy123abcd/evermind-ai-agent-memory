@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
-"""memory_index.py — 变更检测索引生成(TXJ Tiered Memory 配套脚本,通用版)
+"""memory_index.py — change-index generator (Evermind companion script).
 
-0 token、纯标准库、零依赖。读 config.yaml 中列出的 tracked_files,
-为每个文件算 md5 + mtime,生成 memory_index.md:
-  - ✅新变更 = 哈希与上次不同,或 24h 内改过(防跨天漏标)
-  - ⏸未变更 = 哈希没变且不在 24h 窗口
-恢复记忆时:L2 层先看本索引,标 ✅ 才读全文,⏸ 只读摘要行——省 token 的关键。
+Zero-token, pure stdlib, zero dependencies. Reads the tracked_files listed in
+config.yaml, hashes each file (md5 + mtime) and writes memory_index.md:
+  - ✅ new change = hash differs from last run, or file touched within 24h
+  - ⏸ unchanged  = hash identical and outside the 24h window
+During recovery the L2 layer reads this index first: ✅ -> read the file in
+full, ⏸ -> read only the summary line. That is where the token savings live.
 
-用法:
+Usage:
   python memory_index.py --config config.yaml
-  python memory_index.py --demo        # 三场景自测(首次✅/未变⏸/变更✅)
+  python memory_index.py --demo        # self-test (first run / unchanged / changed)
 
-发布版维护:本文件是发布包独立副本,与体系内源脚本各自演进;
-改动请同步两侧,防两头漂移。
+Published-package maintenance: this file is an independent copy of the
+in-system source script; keep both sides in sync when changing either.
 """
 import argparse, hashlib, json, os, re, sys, tempfile
 from datetime import datetime, timedelta
@@ -20,25 +21,25 @@ from datetime import datetime, timedelta
 
 def load_config(path):
     try:
-        import yaml  # 有 yaml 用 yaml;没有则退化(见 fallback)
+        import yaml  # use yaml when available; degrade gracefully otherwise (see fallback)
     except ImportError:
         yaml = None
     if yaml is not None:
         with open(path, "r", encoding="utf-8") as f:
             return yaml.safe_load(f)
-    # fallback:极简 yaml 子集(按当前节分流,支持 config.example 结构)
+    # fallback: minimal yaml subset (routes by current section; supports the config.example structure)
     cfg = {"memory_root": ".", "tracked_files": [], "must_read": [],
            "output_dir": ".", "output_index": "memory_index.md",
            "output_state": "memory_index_state.json"}
-    section = None      # 当前列表节: "must_read" | "tracked_files" | None
-    current = None      # 当前正在收集的列表项 dict
+    section = None      # current list section: "must_read" | "tracked_files" | None
+    current = None      # the list item dict currently being collected
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
             line = line.split("#")[0].strip()
             if not line:
                 continue
             if line.startswith("- "):
-                # 列表项:构造新 dict 挂到当前节
+                # list item: build a new dict under the current section
                 if section is None:
                     continue
                 item = {"path": "", "name": "", "desc": ""}
@@ -74,9 +75,9 @@ def summary(path):
         title = m.group(1).strip()[:50] if m else os.path.basename(path)
         n = sum(1 for _ in open(path, "r", encoding="utf-8", errors="ignore"))
         size = os.path.getsize(path)
-        return f"{title}({n}行/{max(1, size // 1024)}KB)"
+        return f"{title}({n} lines/{max(1, size // 1024)}KB)"
     except Exception:
-        return "读失败"
+        return "read failed"
 
 
 def md5(path):
@@ -101,12 +102,12 @@ def build(out_path, state_path, files):
     now = datetime.now()
     cutoff = now - timedelta(hours=24)
     lines = [
-        "# 记忆索引(自动生成 · %s)" % now.strftime("%Y-%m-%d %H:%M"),
+        "# memory index (auto-generated \u00b7 %s)" % now.strftime("%Y-%m-%d %H:%M"),
         "",
-        "> 用途:条件读层(L2)变更检测。✅新变更→读全文;⏸未变更→只读本索引摘要。",
-        "> 必读层(L3)每次直读;按需层(L1)用到才查。",
+        "> Purpose: change detection for the conditional layer (L2). \u2705 new change -> read the file in full; \u23f8 unchanged -> read only this index summary.",
+        "> The must-read layer (L3) is read every session; the on-demand layer (L1) is read only when needed.",
         "",
-        "## 条件读层(L2)— 变更才读全文",
+        "## Conditional layer (L2) - read in full only on change",
         "",
     ]
     new_state = {}
@@ -122,17 +123,17 @@ def build(out_path, state_path, files):
             new_state[path] = h
             if changed:
                 n_changed += 1
-            flag = "✅新变更" if changed else "⏸未变更"
+            flag = "\u2705 new change" if changed else "\u23f8 unchanged"
             lines.append(
-                f"- {name} | {summary(path)} | {flag} | 改于 {mtime.strftime('%m-%d %H:%M')} | {desc}"
+                f"- {name} | {summary(path)} | {flag} | changed {mtime.strftime('%m-%d %H:%M')} | {desc}"
             )
         except Exception as e:
-            lines.append(f"- {name} | ⚠️读取失败: {e} | 建议读全文确认")
+            lines.append(f"- {name} | \u26a0\ufe0f read failed: {e} | read in full to confirm")
     with open(out_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
     with open(state_path, "w", encoding="utf-8") as f:
         json.dump(new_state, f, ensure_ascii=False, indent=1)
-    print(f"OK 索引已生成 → {out_path}({len(files)} 文件,新变更 {n_changed} 个)")
+    print(f"OK index written \u2192 {out_path} ({len(files)} files, {n_changed} new changes)")
 
 
 def main():
@@ -164,34 +165,34 @@ def demo():
     d = tempfile.mkdtemp()
     p = os.path.join(d, "t.md")
     with open(p, "w", encoding="utf-8") as f:
-        f.write("# 测试文档\n内容")
-    files = [{"path": p, "name": "测试", "desc": "demo"}]
+        f.write("# Test doc\ncontent")
+    files = [{"path": p, "name": "Test file", "desc": "demo"}]
 
     def file_flags(idx_path):
-        """只统计 '- ' 开头文件行的 flag,不匹配表头模板文字"""
+        """count only '- ' file rows; never match header template text"""
         txt = open(idx_path, encoding="utf-8").read()
         rows = [ln for ln in txt.splitlines() if ln.startswith("- ")]
-        changed = sum(1 for ln in rows if "✅新变更" in ln)
-        unchanged = sum(1 for ln in rows if "⏸未变更" in ln)
+        changed = sum(1 for ln in rows if "\u2705 new change" in ln)
+        unchanged = sum(1 for ln in rows if "\u23f8 unchanged" in ln)
         return changed, unchanged
 
-    # 场景1:首次生成 → 应标新变更(全 ✅,无 ⏸)
+    # scenario 1: first run -> everything flagged new (1 changed, 0 unchanged)
     build(os.path.join(d, "idx.md"), os.path.join(d, "st.json"), files)
     c1, u1 = file_flags(os.path.join(d, "idx.md"))
-    assert c1 == 1 and u1 == 0, f"首次生成应 1✅0⏸,实测 {c1}✅{u1}⏸"
-    # 场景2:哈希未变 + mtime 拨出 24h 窗口 → 应标未变更
-    old = datetime.now().timestamp() - 48 * 3600  # 48h 前,超出 24h 窗口
+    assert c1 == 1 and u1 == 0, f"first run should be 1 changed 0 unchanged, got {c1} changed {u1} unchanged"
+    # scenario 2: hash unchanged + mtime pushed outside the 24h window -> unchanged
+    old = datetime.now().timestamp() - 48 * 3600  # 48h ago, outside the 24h window
     os.utime(p, (old, old))
     build(os.path.join(d, "idx.md"), os.path.join(d, "st.json"), files)
     c2, u2 = file_flags(os.path.join(d, "idx.md"))
-    assert c2 == 0 and u2 == 1, f"哈希未变+mtime旧应 0✅1⏸,实测 {c2}✅{u2}⏸"
-    # 场景3:内容变更 → 应标新变更
+    assert c2 == 0 and u2 == 1, f"unchanged hash + old mtime should be 0 changed 1 unchanged, got {c2} changed {u2} unchanged"
+    # scenario 3: content changed -> flagged new
     with open(p, "w", encoding="utf-8") as f:
-        f.write("# 测试文档\n内容改了")
+        f.write("# Test doc\ncontent changed")
     build(os.path.join(d, "idx.md"), os.path.join(d, "st.json"), files)
     c3, u3 = file_flags(os.path.join(d, "idx.md"))
-    assert c3 == 1 and u3 == 0, f"内容变更应 1✅0⏸,实测 {c3}✅{u3}⏸"
-    print(f"demo OK:首次{c1}✅/未变(拨mtime){u2}⏸/变更{c3}✅ 三场景全过")
+    assert c3 == 1 and u3 == 0, f"content change should be 1 changed 0 unchanged, got {c3} changed {u3} unchanged"
+    print(f"demo OK: first-run {c1}\u2705 / unchanged(mtime-pushed) {u2}\u23f8 / changed {c3}\u2705 - all three scenarios passed")
 
 
 if __name__ == "__main__":

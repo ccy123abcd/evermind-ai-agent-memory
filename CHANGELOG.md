@@ -1,9 +1,20 @@
-# CHANGELOG
+# Changelog
 
-## 0.1.0(2026-09-03)
+## 0.1.1 (2026-09-03)
 
-首版发布:
-- 三层渐进记忆恢复法(SKILL.md):L3 必读 / L2 条件读(索引驱动)/ L1 按需
-- 配套脚本 `scripts/memory_index.py`:config 驱动变更索引生成,纯 stdlib,哈希幂等 + 24h 窗口
-- config.example.yaml 模板;README(卖点/原理/安装/安全声明/Roadmap)
-- 双兼容 frontmatter(Hermes metadata.hermes;ClawHub/OpenClaw 字段按官方样例)
+Renamed to **Evermind** (repo `evermind`; brand prefix dropped, low-key credit in README footer).
+International release polish:
+- README rewritten in English with per-platform install guide (Hermes / ClawHub / Claude Code / Cursor / generic SKILL.md agents)
+- SKILL.md fully English; platform-support section added; frontmatter description extended (85%+ host-injection case)
+- LICENSE file added (MIT-0)
+- config.example.yaml comments and sample names in English
+- Script user-facing output (docstring, CLI messages, demo) localized to English
+- Chinese docs kept out of the published tree (archived locally)
+
+## 0.1.0 (2026-09-03)
+
+First release:
+- Tiered progressive memory recovery (SKILL.md): L3 must-read / L2 conditional reads driven by a change index / L1 on-demand
+- Companion script `scripts/memory_index.py`: config-driven change-index generation, pure stdlib, hash-idempotent with a 24h freshness window
+- `config.example.yaml` template; README (pitch / how-it-works / install / safety / roadmap)
+- Dual-compatible frontmatter (standard fields + Hermes `metadata.hermes`)
