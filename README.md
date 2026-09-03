@@ -1,5 +1,9 @@
 # Evermind
 
+<p align="center">
+  <img src="assets/banner.png" alt="Evermind — cross-session memory recovery for AI agents" width="100%">
+</p>
+
 **Cross-session memory recovery for AI agents. Stop your assistant from forgetting — without re-reading everything every session.**
 
 ![version](https://img.shields.io/badge/version-0.1.1-blue)
