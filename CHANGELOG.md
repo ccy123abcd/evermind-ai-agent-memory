@@ -19,6 +19,7 @@
 - Recovery is honest about sources: reports which files each role resolved to, and **lists empty roles instead of claiming a full recovery** (fixes silent false-recovery).
 - Discovery cache is stat-validated before reuse — a moved/deleted source triggers re-discovery (never reuse stale paths).
 - Legacy 0.2.x config (`must_read`/`tracked_files`) migrates automatically, preserving L3/L2 semantics (never upgrades L2 to per-session reads).
+- Storefront description updated to the finalized token-saving narrative — "the token-saving switch… save tokens, save money, save worry", with the measured 44K→12K (~70%) recovery comparison (author-approved copy; replaces the earlier benefit-first wording).
 - Security wording updated for the discovery layer (name-only scan, no content reads); README/config/SKILL.md synchronized; root `version` file corrected (was stale 0.1.1).
 
 ### Fixed
