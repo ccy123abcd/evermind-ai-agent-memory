@@ -1,49 +1,93 @@
 #!/usr/bin/env python3
-"""memory_index.py — change-index generator (Evermind companion script).
+"""memory_index.py — change-index generator + environment discovery (Evermind 0.3).
 
-Zero-token, pure stdlib, zero dependencies. Reads the tracked_files listed in
-config.yaml, hashes each file (md5 + mtime) and writes memory_index.md:
-  - ✅ new change = hash differs from last run, or file touched within 24h
-  - ⏸ unchanged  = hash identical and outside the 24h window
-During recovery the L2 layer reads this index first: ✅ -> read the file in
-full, ⏸ -> read only the summary line. That is where the token savings live.
+Pure stdlib, zero dependencies. Two jobs:
+
+1. DISCOVER (--discover / --list): locate the user's memory carriers for the
+   semantic roles (rules / todos / journal) by scanning common file
+   conventions. Discovery writes .evermind/discovery.json so recovery can
+   resolve roles -> real files. It only lists paths — it never reads content.
+
+2. INDEX (default): hash the L2 tracked files listed in config.yaml and write
+   memory_index.md (✅ new change / ⏸ unchanged) — where token savings live.
+
+Mode (--mode):
+  internal — for the maintainers' own fixed-layout vault (roles come straight
+             from config; no discovery). Zero surprises.
+  auto     — default for external users: roles auto-discovered, extras from
+             config. Fresh install works with no config at all.
+  manual   — roles come only from explicit config (0.2.x behaviour preserved).
+
+Config shapes:
+  New:  mode: auto|manual|internal
+        roles: {rules: [...], todos: [...], journal: [...]}   # files or dirs
+        must_read_extra: [...]    # extra L3 always-read files
+        tracked_files_extra: [...] # extra L2 change-tracked files
+  Old (0.2.x): must_read: [...] tracked_files: [...] -> migrated: must_read ->
+        must_read_extra (keeps L3 meaning), tracked_files -> tracked_files_extra
+        (keeps L2 meaning). Roles are NEVER guessed from old flat lists.
 
 Usage:
-  python memory_index.py --config config.yaml
-  python memory_index.py --demo        # self-test (first run / unchanged / changed)
+  python memory_index.py --discover [root]     # scan + write discovery.json
+  python memory_index.py --list [root]         # scan, print only, no write
+  python memory_index.py --config config.yaml  # build index (auto/manual)
+  python memory_index.py --config config.yaml --mode internal
+  python memory_index.py --demo                # self-test
 
-Published-package maintenance: this file is an independent copy of the
-in-system source script; keep both sides in sync when changing either.
+Published-package note (0.3): the in-system copy is intentionally different —
+the internal build uses its own fixed-layout config (mode internal). Shared
+logic (build/hash/summary) is kept in sync by hand; discovery lives here only.
 """
-import argparse, hashlib, json, os, re, sys, tempfile
+import argparse, glob, hashlib, json, os, re, sys, tempfile
 from datetime import datetime, timedelta
+
+# ── Single source of truth for discovery candidates (community conventions) ──
+# Order IS priority: first hit wins per role. Extend here only; the SKILL.md
+# hand-list is a derived summary pointing back to this file.
+RULES_CANDIDATES = [
+    "CLAUDE.md", "AGENTS.md", "AGENTS.txt", ".cursor/rules/",  # dir
+]
+RULES_CANDIDATES_HOME = [
+    ".claude/CLAUDE.md", ".config/agent/rules.md", ".claude/rules.md",
+]
+TODOS_CANDIDATES = ["TODO.md", "todo.md", "TODO.txt", "todo.txt", "tasks.md",
+                    "docs/TODO.md", "docs/todo.md", "docs/todo.txt", "tasks/TODO.md"]
+TODOS_CANDIDATES_HOME = ["todo.txt", ".todo/"]  # todo.txt-cli conventions
+JOURNAL_DIRS = ["journal", "logs", "notes", "docs/journal", "journal/archive", "worklog"]
+JOURNAL_GLOB = re.compile(r"^\d{4}-\d{2}-\d{2}\.(md|txt|markdown)$")
+EXCLUDE_DIRS = {".git", ".obsidian", ".trash", ".venv", "node_modules",
+                ".evermind", "__pycache__", ".idea", ".vscode"}
+DISCOVERY_FILE = "discovery.json"
+
+
+def expand(p):
+    return os.path.abspath(os.path.expanduser(p))
 
 
 def load_config(path):
     try:
-        import yaml  # use yaml when available; degrade gracefully otherwise (see fallback)
+        import yaml
     except ImportError:
         yaml = None
     if yaml is not None:
         with open(path, "r", encoding="utf-8") as f:
-            return yaml.safe_load(f)
-    # fallback: minimal yaml subset (routes by current section; supports the config.example structure)
-    cfg = {"memory_root": ".", "tracked_files": [], "must_read": [],
-           "output_dir": ".", "output_index": "memory_index.md",
-           "output_state": "memory_index_state.json"}
-    section = None      # current list section: "must_read" | "tracked_files" | None
-    current = None      # the list item dict currently being collected
+            return yaml.safe_load(f) or {}
+    # fallback: minimal yaml subset (routes by current section)
+    cfg = {"mode": "auto", "roles": {}, "must_read_extra": [],
+           "tracked_files_extra": [], "output_dir": ".",
+           "output_index": "memory_index.md", "output_state": "memory_index_state.json"}
+    section = None
+    current = None
     with open(path, "r", encoding="utf-8") as f:
         for line in f:
             line = line.split("#")[0].strip()
             if not line:
                 continue
             if line.startswith("- "):
-                # list item: build a new dict under the current section
                 if section is None:
                     continue
                 item = {"path": "", "name": "", "desc": ""}
-                cfg[section].append(item)
+                cfg.setdefault(section, []).append(item)
                 current = item
                 body = line[2:].strip()
                 if ":" in body:
@@ -55,9 +99,12 @@ def load_config(path):
                 continue
             k, _, v = line.partition(":")
             k, v = k.strip(), v.strip()
-            if k in ("must_read", "tracked_files"):
+            if k in ("must_read", "tracked_files", "must_read_extra", "tracked_files_extra"):
                 section = k
                 current = None
+            elif k == "mode":
+                cfg["mode"] = v
+                section = None
             elif k in ("memory_root", "output_dir", "output_index", "output_state"):
                 cfg[k] = v
                 section = None
@@ -66,6 +113,174 @@ def load_config(path):
                 current[k] = v
     return cfg
 
+
+def migrate_legacy(cfg):
+    """0.2.x config -> 0.3: preserve semantics, never guess roles."""
+    if "must_read" in cfg and "must_read_extra" not in cfg:
+        cfg["must_read_extra"] = cfg.pop("must_read")
+    if "tracked_files" in cfg and "tracked_files_extra" not in cfg:
+        cfg["tracked_files_extra"] = cfg.pop("tracked_files")
+    if "memory_root" in cfg:
+        cfg.setdefault("scan_root", cfg["memory_root"])
+    return cfg
+
+
+# ── discovery ────────────────────────────────────────────────────────────────
+
+def _hit(path):
+    p = expand(path)
+    if not os.path.exists(p):
+        return None
+    if os.path.isfile(p):
+        # case-insensitive fs: candidate "TODO.txt" may resolve to on-disk
+        # "todo.txt" — return the real name so discovery stays honest
+        d, n = os.path.split(p)
+        try:
+            for real in os.listdir(d):
+                if real.lower() == n.lower() and os.path.isfile(os.path.join(d, real)):
+                    return os.path.join(d, real)
+        except OSError:
+            pass
+    return p
+
+
+def _latest_dated_in(directory):
+    """Newest YYYY-MM-DD.* file directly inside directory (1 level)."""
+    d = expand(directory)
+    if not os.path.isdir(d):
+        return None
+    best, best_m = None, None
+    for name in os.listdir(d):
+        if not JOURNAL_GLOB.match(name):
+            continue
+        p = os.path.join(d, name)
+        if not os.path.isfile(p):
+            continue
+        m = os.path.getmtime(p)
+        if best_m is None or m > best_m:
+            best, best_m = p, m
+    return best
+
+
+def _walk_shallow(root, max_depth=2):
+    """Yield dirs up to max_depth below root, skipping excludes. Never full-tree."""
+    root = expand(root)
+    seen = set()
+    for dirpath, dirnames, _ in os.walk(root):
+        depth = dirpath[len(root):].count(os.sep)
+        dirnames[:] = [d for d in dirnames if d not in EXCLUDE_DIRS]
+        if depth >= max_depth:
+            dirnames[:] = []
+            continue
+        for d in list(dirnames):
+            full = os.path.join(dirpath, d)
+            if full not in seen:
+                seen.add(full)
+                yield full
+
+
+def discover(scan_root, mode="auto"):
+    """Locate role carriers. Returns {role: [paths...]} + missing list.
+    Only paths — never reads file content."""
+    root = expand(scan_root or ".")
+    roles = {"rules": [], "identity": [], "todos": [], "journal": [], "profile": []}
+    # identity: host-injected platforms handle identity at the SKILL layer;
+    # for file-based hosts the rules file doubles as identity (top section).
+    # We still probe CLAUDE.md/AGENTS.md as the identity carrier candidate.
+    for cand in RULES_CANDIDATES:
+        p = os.path.join(root, cand) if not os.path.isabs(cand) else cand
+        h = _hit(p)
+        if h:
+            roles["rules"].append(h)
+            roles["identity"].append(h)  # rules file doubles as identity carrier
+            break
+    else:
+        for cand in RULES_CANDIDATES_HOME:
+            h = _hit(os.path.expanduser("~/" + cand))
+            if h:
+                roles["rules"].append(h)
+                roles["identity"].append(h)
+                break
+    for cand in TODOS_CANDIDATES:
+        p = os.path.join(root, cand) if not os.path.isabs(cand) else cand
+        h = _hit(p)
+        if h:
+            roles["todos"].append(h)
+            break
+    else:
+        for cand in TODOS_CANDIDATES_HOME:
+            if cand.endswith("/"):  # directory
+                d = os.path.expanduser("~/" + cand.rstrip("/"))
+                hit = _latest_dated_in(d) or (d if os.path.isdir(d) and os.listdir(d) else None)
+                if hit:
+                    roles["todos"].append(hit)
+                    break
+            else:
+                h = _hit(os.path.expanduser("~/" + cand))
+                if h:
+                    roles["todos"].append(h)
+                    break
+    # journal: newest dated file under any conventional journal dir (shallow)
+    for d in JOURNAL_DIRS:
+        cand_dir = os.path.join(root, d)
+        hit = _latest_dated_in(cand_dir)
+        if hit:
+            roles["journal"].append(hit)
+            break
+    missing = [r for r, v in roles.items() if not v and r != "profile"]
+    return roles, missing
+
+
+def discovery_path(scan_root):
+    return os.path.join(expand(scan_root or "."), ".evermind", DISCOVERY_FILE)
+
+
+def load_discovery(scan_root):
+    p = discovery_path(scan_root)
+    if not os.path.exists(p):
+        return None
+    try:
+        return json.load(open(p, encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def discovery_still_valid(disc):
+    """stat every stored path; any gone/unreadable -> re-discover (fixes V4)."""
+    for role, paths in (disc or {}).get("roles", {}).items():
+        for p in paths:
+            if p == "injected":
+                continue
+            if not os.path.exists(expand(p)):
+                return False
+    return True
+
+
+def write_discovery(scan_root, roles, missing):
+    out = discovery_path(scan_root)
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    payload = {"scan_root": expand(scan_root), "scanned_at": datetime.now().isoformat(timespec="minutes"),
+               "roles": roles, "missing": missing}
+    with open(out, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=1)
+    return payload
+
+
+def print_discovery(roles, missing):
+    print("Evermind discovery:")
+    for role, paths in roles.items():
+        if paths:
+            joined = " · ".join(("injected" if p == "injected" else p) for p in paths)
+            print(f"  {role} -> {joined}")
+        else:
+            print(f"  {role} -> (none)")
+    if missing:
+        print(f"  missing: {', '.join(missing)}")
+    if all(not v for v in roles.values()):
+        print("  tip: Evermind targets local files. SaaS-only memory? Export it to a local folder first.")
+
+
+# ── index ────────────────────────────────────────────────────────────────────
 
 def summary(path):
     try:
@@ -92,6 +307,18 @@ def resolve(p, base):
     return p if os.path.isabs(p) else os.path.join(base, p)
 
 
+def role_file_items(roles, base):
+    """Flatten roles into L2 tracked items (path/name/desc) for indexing.
+    Directories were already resolved to concrete files at discovery time."""
+    items = []
+    for role, paths in roles.items():
+        for p in paths:
+            if p == "injected" or not p:
+                continue
+            items.append({"path": resolve(p, base), "name": f"[{role}] {os.path.basename(p)}", "desc": role})
+    return items
+
+
 def build(out_path, state_path, files):
     prev = {}
     if os.path.exists(state_path):
@@ -102,9 +329,9 @@ def build(out_path, state_path, files):
     now = datetime.now()
     cutoff = now - timedelta(hours=24)
     lines = [
-        "# memory index (auto-generated \u00b7 %s)" % now.strftime("%Y-%m-%d %H:%M"),
+        "# memory index (auto-generated · %s)" % now.strftime("%Y-%m-%d %H:%M"),
         "",
-        "> Purpose: change detection for the conditional layer (L2). \u2705 new change -> read the file in full; \u23f8 unchanged -> read only this index summary.",
+        "> Purpose: change detection for the conditional layer (L2). ✅ new change -> read the file in full; ⏸ unchanged -> read only this index summary.",
         "> The must-read layer (L3) is read every session; the on-demand layer (L1) is read only when needed.",
         "",
         "## Conditional layer (L2) - read in full only on change",
@@ -123,37 +350,85 @@ def build(out_path, state_path, files):
             new_state[path] = h
             if changed:
                 n_changed += 1
-            flag = "\u2705 new change" if changed else "\u23f8 unchanged"
+            flag = "✅ new change" if changed else "⏸ unchanged"
             lines.append(
                 f"- {name} | {summary(path)} | {flag} | changed {mtime.strftime('%m-%d %H:%M')} | {desc}"
             )
         except Exception as e:
-            lines.append(f"- {name} | \u26a0\ufe0f read failed: {e} | read in full to confirm")
+            lines.append(f"- {name} | ⚠️ read failed: {e} | read in full to confirm")
     with open(out_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
     with open(state_path, "w", encoding="utf-8") as f:
         json.dump(new_state, f, ensure_ascii=False, indent=1)
-    print(f"OK index written \u2192 {out_path} ({len(files)} files, {n_changed} new changes)")
+    print(f"OK index written → {out_path} ({len(files)} files, {n_changed} new changes)")
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--config", default="config.yaml")
+    ap.add_argument("--config", default=None)
+    ap.add_argument("--mode", choices=["internal", "auto", "manual"], default=None)
+    ap.add_argument("--discover", nargs="?", const=".", default=None, metavar="ROOT",
+                    help="scan ROOT (default .) and write .evermind/discovery.json")
+    ap.add_argument("--list", nargs="?", const=".", default=None, metavar="ROOT",
+                    help="scan ROOT and print findings without writing")
     ap.add_argument("--demo", action="store_true")
     args = ap.parse_args()
     if args.demo:
         demo()
         return 0
-    cfg = load_config(args.config)
-    base = cfg.get("memory_root", ".")
+    if args.discover is not None:
+        roles, missing = discover(args.discover)
+        write_discovery(args.discover, roles, missing)
+        print_discovery(roles, missing)
+        return 0
+    if args.list is not None:
+        roles, missing = discover(args.list)
+        print_discovery(roles, missing)
+        return 0
+
+    # build index
+    if not args.config and not os.path.exists("config.yaml"):
+        # cold start with no config: discover and index what we find
+        roles, missing = discover(".")
+        write_discovery(".", roles, missing)
+        print_discovery(roles, missing)
+        files = role_file_items(roles, ".")
+        out_dir = os.path.join(expand("."), ".evermind")
+        os.makedirs(out_dir, exist_ok=True)
+        build(os.path.join(out_dir, "memory_index.md"),
+              os.path.join(out_dir, "memory_index_state.json"), files)
+        return 0
+    cfg = migrate_legacy(load_config(args.config or "config.yaml"))
+    mode = args.mode or cfg.get("mode", "auto")
+    base = cfg.get("memory_root") or cfg.get("scan_root") or os.path.dirname(os.path.abspath(args.config or "config.yaml"))
+
     files = []
-    for f in cfg.get("tracked_files", []):
+    roles = {}
+    if mode == "auto":
+        disc = load_discovery(base)
+        if disc and discovery_still_valid(disc):
+            roles = disc.get("roles", {})
+        else:
+            roles, _ = discover(base)
+            write_discovery(base, roles, [])
+        files = role_file_items(roles, base)
+    elif mode == "internal":
+        # fixed-layout (maintainer) config: roles come straight from config
+        roles = cfg.get("roles", {})
+        files = role_file_items(roles, base)
+    # manual / internal extras always apply
+    for f in cfg.get("must_read_extra", []):
         f = dict(f)
         f["path"] = resolve(f["path"], base)
         files.append(f)
-    out_dir = cfg.get("output_dir") or os.path.dirname(os.path.abspath(args.config))
+    for f in cfg.get("tracked_files_extra", []):
+        f = dict(f)
+        f["path"] = resolve(f["path"], base)
+        files.append(f)
+
+    out_dir = cfg.get("output_dir") or os.path.dirname(os.path.abspath(args.config or "config.yaml"))
     if not os.path.isabs(out_dir):
-        out_dir = os.path.join(os.path.dirname(os.path.abspath(args.config)), out_dir)
+        out_dir = os.path.join(os.path.dirname(os.path.abspath(args.config or "config.yaml")), out_dir)
     os.makedirs(out_dir, exist_ok=True)
     build(os.path.join(out_dir, cfg.get("output_index", "memory_index.md")),
           os.path.join(out_dir, cfg.get("output_state", "memory_index_state.json")),
@@ -162,37 +437,78 @@ def main():
 
 
 def demo():
+    import shutil
     d = tempfile.mkdtemp()
+
+    # A. discovery on three environment samples
+    # A1 standard md layout
+    env1 = os.path.join(d, "env1")
+    os.makedirs(os.path.join(env1, "docs"))
+    os.makedirs(os.path.join(env1, "journal"))
+    open(os.path.join(env1, "CLAUDE.md"), "w", encoding="utf-8").write("# Rules\nbe nice\n")
+    open(os.path.join(env1, "docs", "TODO.md"), "w", encoding="utf-8").write("# TODO\n- x\n")
+    open(os.path.join(env1, "journal", "2026-09-04.md"), "w", encoding="utf-8").write("# 2026-09-04\nworked\n")
+    r1, m1 = discover(env1)
+    assert r1["rules"] and "CLAUDE.md" in r1["rules"][0], f"A1 rules failed: {r1['rules']}"
+    assert r1["todos"] and "TODO.md" in r1["todos"][0], f"A1 todos failed: {r1['todos']}"
+    assert r1["journal"] and "2026-09-04" in r1["journal"][0], f"A1 journal failed: {r1['journal']}"
+    assert not m1 or m1 == ["profile"], f"A1 missing unexpected: {m1}"
+
+    # A2 todo.txt layout (todo.txt-cli conventions in home are not mockable here;
+    # verify project-level todo.txt + no journal)
+    env2 = os.path.join(d, "env2")
+    os.makedirs(env2)
+    open(os.path.join(env2, "todo.txt"), "w", encoding="utf-8").write("x done\n")
+    r2, m2 = discover(env2)
+    assert r2["todos"] and "todo.txt" in r2["todos"][0], f"A2 todos failed: {r2['todos']}"
+    assert "journal" in m2, f"A2 journal should be missing: {m2}"
+
+    # A3 empty dir -> everything missing + SaaS tip readable
+    env3 = os.path.join(d, "env3")
+    os.makedirs(env3)
+    r3, m3 = discover(env3)
+    assert "rules" in m3 and "todos" in m3 and "journal" in m3, f"A3 missing wrong: {m3}"
+
+    # B. discovery.json lifecycle: valid -> reused; file deleted -> invalid
+    roles, _ = discover(env1)
+    write_discovery(env1, roles, [])
+    assert discovery_still_valid(load_discovery(env1)), "B valid discovery should pass stat"
+    os.remove(r1["journal"][0])
+    assert not discovery_still_valid(load_discovery(env1)), "B deleted file must invalidate"
+
+    # C. legacy config migration preserves L2 semantics
+    cfg = {"memory_root": ".", "must_read": [{"path": "a.md", "desc": "x"}],
+           "tracked_files": [{"path": "b.md", "desc": "y"}]}
+    cfg = migrate_legacy(cfg)
+    assert cfg["must_read_extra"] and "tracked_files" not in cfg, "C legacy migration failed"
+    assert "tracked_files_extra" in cfg, "C L2 semantics must be preserved as extra"
+
+    # D. index build still works (3 scenarios from 0.2.x)
     p = os.path.join(d, "t.md")
-    with open(p, "w", encoding="utf-8") as f:
-        f.write("# Test doc\ncontent")
+    open(p, "w", encoding="utf-8").write("# Test doc\ncontent")
     files = [{"path": p, "name": "Test file", "desc": "demo"}]
 
     def file_flags(idx_path):
-        """count only '- ' file rows; never match header template text"""
         txt = open(idx_path, encoding="utf-8").read()
         rows = [ln for ln in txt.splitlines() if ln.startswith("- ")]
-        changed = sum(1 for ln in rows if "\u2705 new change" in ln)
-        unchanged = sum(1 for ln in rows if "\u23f8 unchanged" in ln)
-        return changed, unchanged
+        return (sum(1 for ln in rows if "✅ new change" in ln),
+                sum(1 for ln in rows if "⏸ unchanged" in ln))
 
-    # scenario 1: first run -> everything flagged new (1 changed, 0 unchanged)
     build(os.path.join(d, "idx.md"), os.path.join(d, "st.json"), files)
     c1, u1 = file_flags(os.path.join(d, "idx.md"))
-    assert c1 == 1 and u1 == 0, f"first run should be 1 changed 0 unchanged, got {c1} changed {u1} unchanged"
-    # scenario 2: hash unchanged + mtime pushed outside the 24h window -> unchanged
-    old = datetime.now().timestamp() - 48 * 3600  # 48h ago, outside the 24h window
+    assert c1 == 1 and u1 == 0, f"D1 got {c1} changed {u1} unchanged"
+    old = datetime.now().timestamp() - 48 * 3600
     os.utime(p, (old, old))
     build(os.path.join(d, "idx.md"), os.path.join(d, "st.json"), files)
     c2, u2 = file_flags(os.path.join(d, "idx.md"))
-    assert c2 == 0 and u2 == 1, f"unchanged hash + old mtime should be 0 changed 1 unchanged, got {c2} changed {u2} unchanged"
-    # scenario 3: content changed -> flagged new
-    with open(p, "w", encoding="utf-8") as f:
-        f.write("# Test doc\ncontent changed")
+    assert c2 == 0 and u2 == 1, f"D2 got {c2} changed {u2} unchanged"
+    open(p, "w", encoding="utf-8").write("# Test doc\ncontent changed")
     build(os.path.join(d, "idx.md"), os.path.join(d, "st.json"), files)
     c3, u3 = file_flags(os.path.join(d, "idx.md"))
-    assert c3 == 1 and u3 == 0, f"content change should be 1 changed 0 unchanged, got {c3} changed {u3} unchanged"
-    print(f"demo OK: first-run {c1}\u2705 / unchanged(mtime-pushed) {u2}\u23f8 / changed {c3}\u2705 - all three scenarios passed")
+    assert c3 == 1 and u3 == 0, f"D3 got {c3} changed {u3} unchanged"
+
+    shutil.rmtree(d, ignore_errors=True)
+    print("demo OK: discover(3 envs: md/todo.txt/empty) + lifecycle stat + legacy migration + index 3 scenarios — all passed")
 
 
 if __name__ == "__main__":

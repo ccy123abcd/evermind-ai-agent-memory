@@ -1,33 +1,41 @@
-# Evermind — example configuration
-# Copy to config.yaml and point at your actual memory files.
+# Evermind — example configuration (0.3)
+# Copy to config.yaml and adjust. Three modes:
+#   auto     (default) — roles auto-discovered from common file conventions.
+#            A fresh install works with NO config at all: just run
+#            `python scripts/memory_index.py` (cold start discovers + indexes).
+#   manual   — roles come only from the explicit `roles:` paths below
+#            (0.2.x-style full control).
+#   internal — fixed-layout mode for the maintainers' own vault; roles come
+#            from config, no discovery.
+mode: auto
 
-memory_root: /path/to/your/memory/vault   # memory root (the script only reads files listed below)
+# Semantic roles → real files. Each role may hold several paths; order = read order.
+# A path may be a FILE (read it) or a DIRECTORY (newest YYYY-MM-DD.* file inside wins).
+# In auto mode, roles found by discovery are written to .evermind/discovery.json —
+# you can edit that file to override, and `--list` shows what discovery would pick.
+roles:
+  rules: []        # e.g. ["CLAUDE.md", "AGENTS.md", ".cursor/rules"]
+  identity: []     # optional; hosts that inject identity (Hermes/OpenClaw) skip this
+  todos: []        # e.g. ["docs/TODO.md", "~/todo.txt"]
+  journal: []      # e.g. ["journal"]   (directory → newest dated file)
+  profile: []      # optional user-profile file
 
-# L3 must-read layer: core files read at the start of EVERY session.
-# name is display-only (any language).
-must_read:
-  - path: /path/to/your/memory/vault/identity.md
-    name: Identity & rules
-  - path: /path/to/your/memory/vault/user-profile.md
-    name: User profile
-  - path: /path/to/your/memory/vault/todos.md
-    name: Todo list
-  - path: /path/to/your/memory/vault/work-log/latest.md
-    name: Latest work log
+# Extra L3 files read at the START of EVERY session (beyond roles).
+must_read_extra:
+  - path: README.md
+    name: Project readme
+    desc: project context
 
-# L2 change-tracked layer: secondary files re-read ONLY when the index flags a change.
-# Each entry: path / display name / one-line description of when it matters.
-tracked_files:
-  - path: /path/to/your/memory/vault/roles/assistant-role.md
-    name: Assistant role
-    note: read in full only when role definitions change
-  - path: /path/to/your/memory/vault/projects/active.md
-    name: Active projects
-    note: read when project state matters to the current task
-  - path: /path/to/your/memory/vault/configs/settings.md
-    name: Tool settings
-    note: consult before installing or reconfiguring tools
+# Extra L2 files: re-read ONLY when the index flags a change (token savings live here).
+tracked_files_extra:
+  - path: docs/decisions/
+    name: Decisions
+    desc: architecture decisions
 
-# Where the generated index + state file are written (defaults to the script directory).
-# index_output: memory_index.md
-# state_output: memory_index_state.json
+# Legacy 0.2.x keys (must_read / tracked_files) are migrated automatically:
+#   must_read      -> must_read_extra   (stays L3 — read every session)
+#   tracked_files  -> tracked_files_extra (stays L2 — change-indexed)
+
+# Where the generated index + state file are written (default: next to the config).
+output_index: memory_index.md
+output_state: memory_index_state.json

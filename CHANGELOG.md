@@ -7,6 +7,23 @@
 ### Changed
 - (none pending)
 
+## [0.3.0] - 2026-09-04
+
+### Added
+- **Environment discovery** (fixes the "assumes our file layout" flaw): `memory_index.py --discover`/`--list` locate the user's memory carriers by community conventions (rules/identity/todos/journal) → `.evermind/discovery.json`. Fresh installs work with zero config.
+- **Semantic roles**: config `roles:` maps rules/identity/todos/journal/profile → real files (file or directory; directory resolves to newest `YYYY-MM-DD.*`); extras stay L3/L2.
+- **Context gauge + threshold nudges**: per-platform context-usage query table (Hermes `/status`, Claude Code `/context`, …); honest reporting — never invent a percentage; 30/50/70% switch nudges.
+- `--mode internal|auto|manual` (internal = fixed-layout for the maintainers' own vault; published/community default = auto).
+
+### Changed
+- Recovery is honest about sources: reports which files each role resolved to, and **lists empty roles instead of claiming a full recovery** (fixes silent false-recovery).
+- Discovery cache is stat-validated before reuse — a moved/deleted source triggers re-discovery (never reuse stale paths).
+- Legacy 0.2.x config (`must_read`/`tracked_files`) migrates automatically, preserving L3/L2 semantics (never upgrades L2 to per-session reads).
+- Security wording updated for the discovery layer (name-only scan, no content reads); README/config/SKILL.md synchronized; root `version` file corrected (was stale 0.1.1).
+
+### Fixed
+- config.example.yaml key mismatches (`note:` vs code's `desc:`; `index_output` vs `output_index`) resolved by full rewrite.
+
 ## [0.2.2] - 2026-09-04
 
 ### Changed

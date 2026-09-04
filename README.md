@@ -6,7 +6,7 @@
 
 **Cross-session memory recovery for AI agents. Restore state in ~70% fewer tokens — and switch contexts anytime, at any task boundary, without losing your agent's memory.**
 
-![version](https://img.shields.io/badge/version-0.2.2-blue)
+![version](https://img.shields.io/badge/version-0.3.0-blue)
 ![license](https://img.shields.io/badge/license-MIT--0-green)
 ![platform](https://img.shields.io/badge/platform-Hermes%20%7C%20Claude%20Code%20%7C%20Cursor%20%7C%20OpenClaw-lightgrey)
 ![deps](https://img.shields.io/badge/deps-zero-orange)
@@ -38,15 +38,16 @@ Every switch costs a few thousand tokens to recover instead of tens of thousands
 git clone https://github.com/ccy123abcd/evermind-ai-agent-memory.git
 cp -r evermind ~/.claude/skills/          # or your agent's skills dir
 
-# 2. configure
-cd evermind && cp config.example.yaml config.yaml
-#   edit config.yaml: memory_root + must_read (L3) + tracked_files (L2)
+# 2. cold start (no config needed — discovery finds your layout)
+cd evermind
+python scripts/memory_index.py --list .   # optional: preview what discovery picks
+python scripts/memory_index.py            # discover + write index (≈30s total)
 
-# 3. generate the change index (schedule it daily)
-python scripts/memory_index.py --config config.yaml
+# 3. (optional) tune — copy config.example.yaml → config.yaml (mode/roles/extras),
+#    or edit .evermind/discovery.json to override a discovered role
 
-# 4. self-test (3 scenarios: first run / unchanged / changed)
-python scripts/memory_index.py --config config.yaml --demo
+# 4. self-test
+python scripts/memory_index.py --demo
 ```
 
 Then, at the start of each new session, instruct your agent to follow `SKILL.md` (or wire it into a session-reset hook for Hermes).
@@ -92,24 +93,29 @@ flowchart TD
 
 > Honest numbers: ~12K is our measured tiered-recovery cost vs ~44K naive (~70% less). ~55-75% cumulative is our measured range for hosts that already inject identity (the duplicate identity read is skipped). Highest-value users: heavy multi-session automation (many sessions/day).
 
-## Configuration
+## Configuration (optional)
 
-Copy `config.example.yaml` → `config.yaml`:
+Evermind works with **no config** (auto-discovery). To tune, copy `config.example.yaml` → `config.yaml`:
 
-- `memory_root` — root of your memory files
-- `must_read` — L3 files, read in full every session
-- `tracked_files` — L2 files, change-tracked (path / display name / one-line description)
+- `mode` — `auto` (default, discovers your layout) / `manual` (explicit paths only) / `internal` (fixed-layout)
+- `roles` — semantic roles → real files: `rules` / `identity` / `todos` / `journal` / `profile` (file or directory; a directory resolves to its newest `YYYY-MM-DD.*` file)
+- `must_read_extra` — extra L3 files read in full every session
+- `tracked_files_extra` — extra L2 files, change-tracked (path / display name / description)
+
+Legacy 0.2.x `must_read`/`tracked_files` keys migrate automatically (kept as L3/L2 extras). Discovery output lives in `.evermind/discovery.json` — override any role there.
 
 Outputs: `memory_index.md` (readable) + `memory_index_state.json` (state — don't hand-edit).
 
 ## Usage protocol (start of every new session)
 
-1. Read the L3 must-read files — every one, no shortcuts.
+0. **Discover** — read `.evermind/discovery.json` (or run `python scripts/memory_index.py --discover .` on first use); stat the stored paths — any missing source triggers re-discovery. Python unavailable? Use the manual fallback list in SKILL.md.
+1. Read the L3 roles + `must_read_extra` — every one, no shortcuts (host-injected identity = skip the file probe).
 2. Read `memory_index.md`:
    - ✅ new change → read that file in full
    - ⏸ unchanged → index summary line only
 3. Consult L1 detail docs only when a task needs them.
-4. Report recovery done (identity ✅ / changes ✅ / N todos) so the user can confirm.
+4. Report honestly with sources — list any role that came up empty; never claim a recovery that didn't happen.
+5. Context gauge — report real usage % when the platform exposes it (Hermes `/status`, Claude Code `/context`); nudge at 50% / 70% (full table in SKILL.md).
 
 ## Repository layout
 
@@ -127,7 +133,7 @@ evermind/
 
 ## Security
 
-- Reads only files listed in your `config.yaml`; never writes memory files themselves (only index md + state json)
+- Discovery scans candidate paths by name only (metadata — no content); the index reads and hashes only files you listed (roles + extras). Never writes your memory files themselves (only `.evermind/discovery.json`, index md + state json)
 - Nothing leaves your machine — no remote install pipelines, no script-to-shell execution
 - Python standard library only (PyYAML used if present, graceful degradation without)
 
