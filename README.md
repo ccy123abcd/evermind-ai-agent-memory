@@ -135,7 +135,7 @@ evermind/
 
 - Discovery scans candidate paths by name only (metadata — no content); the index reads and hashes only files you listed (roles + extras). Never writes your memory files themselves (only `.evermind/discovery.json`, index md + state json)
 - Nothing leaves your machine — no remote install pipelines, no script-to-shell execution
-- Python standard library only (PyYAML used if present, graceful degradation without)
+- Python standard library only. PyYAML optional: when absent, a built-in fallback parser reads the config (nested `roles:`, extras, flat `role_*` keys) — no silent config loss
 
 ## Roadmap (managed edition)
 

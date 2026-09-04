@@ -67,37 +67,69 @@ def expand(p):
 
 
 def _parse_fallback(text):
-    """Minimal yaml-subset parser (routes by current section). Supports:
+    """Minimal yaml-subset parser. Supports the SHIPPED config.example shape:
     - mode: auto|manual|internal
-    - flat role keys: role_rules: CLAUDE.md, docs/rules.md   (comma-separated ok)
+    - nested roles block (indent-based), values are plain strings:
+        roles:
+          rules: [CLAUDE.md]          # inline list
+          todos:                      # block list
+            - docs/TODO.md
+            - ~/todo.txt
+    - flat role keys as an alternative: role_rules: a.md, b.md
     - list sections: must_read / tracked_files / must_read_extra / tracked_files_extra
-    Does NOT pre-seed empty lists — so legacy keys appear only when present and
-    migration guards can tell 'absent' from 'present-but-empty'.
+      (dict items: path/name/desc)
+    Does NOT pre-seed empty lists — legacy keys appear only when present.
     """
     cfg = {"mode": "auto", "roles": {}}
-    section = None
-    current = None
-    for line in text.splitlines():
-        line = line.split("#")[0].strip()
-        if not line:
+    section = None          # "must_read" | "tracked_files" | ... | "roles" | None
+    current = None          # dict item being collected (extra list sections)
+    roles_key = None        # active role subkey inside roles block
+    for raw in text.splitlines():
+        line = raw.split("#")[0].rstrip()
+        stripped = line.strip()
+        if not stripped:
             continue
-        if line.startswith("- "):
-            if section is None:
+        indent = len(line) - len(line.lstrip())
+        # inside roles block: subkey (2sp) or list item (4sp)
+        if section == "roles":
+            if indent == 2 and not stripped.startswith("-") and ":" in stripped:
+                sub_k, _, sub_v = stripped.partition(":")
+                sub_k, sub_v = sub_k.strip(), sub_v.strip()
+                roles_key = sub_k
+                if sub_v.startswith("["):  # inline list: rules: [a.md, b.md]
+                    inner = sub_v[1:].rsplit("]", 1)[0]
+                    cfg.setdefault("roles", {})[roles_key] = [p.strip() for p in inner.split(",") if p.strip()]
+                else:
+                    cfg.setdefault("roles", {})[roles_key] = []
+                continue
+            if indent == 4 and stripped.startswith("- ") and roles_key:
+                cfg["roles"].setdefault(roles_key, []).append(stripped[2:].strip())
+                continue
+            if indent == 0:
+                section = None  # left roles block
+        if not section and stripped.startswith("- "):
+            continue  # stray list item outside a section
+        if stripped.startswith("- "):
+            if section is None or section == "roles":
                 continue
             item = {"path": "", "name": "", "desc": ""}
             cfg.setdefault(section, []).append(item)
             current = item
-            body = line[2:].strip()
+            body = stripped[2:].strip()
             if ":" in body:
                 k, _, v = body.partition(":")
                 if k.strip() in item:
                     item[k.strip()] = v.strip()
             continue
-        if ":" not in line:
+        if ":" not in stripped:
             continue
-        k, _, v = line.partition(":")
+        k, _, v = stripped.partition(":")
         k, v = k.strip(), v.strip()
-        if k in ("must_read", "tracked_files", "must_read_extra", "tracked_files_extra"):
+        if k == "roles":
+            section = "roles"
+            roles_key = None
+            current = None
+        elif k in ("must_read", "tracked_files", "must_read_extra", "tracked_files_extra"):
             section = k
             current = None
         elif k == "mode":
@@ -105,7 +137,7 @@ def _parse_fallback(text):
             section = None
             current = None
         elif k.startswith("role_"):
-            # flat roles for yaml-less environments: role_rules: a.md, b.md
+            # flat roles alternative: role_rules: a.md, b.md
             name = k[len("role_"):]
             cfg.setdefault("roles", {})[name] = [p.strip() for p in v.split(",") if p.strip()]
             section = None
@@ -435,6 +467,10 @@ def main():
         files = role_file_items(roles, ".")
         out_dir = os.path.join(expand("."), ".evermind")
         os.makedirs(out_dir, exist_ok=True)
+        if not files:
+            print("ERROR: nothing discovered to index. Evermind targets local files "
+                  "(rules/todos/journal); SaaS-only memory? Export it to a local folder first.", file=sys.stderr)
+            return 3
         build(os.path.join(out_dir, "memory_index.md"),
               os.path.join(out_dir, "memory_index_state.json"), files)
         return 0
@@ -465,6 +501,15 @@ def main():
         f = dict(f)
         f["path"] = resolve(f["path"], base)
         files.append(f)
+
+    if not files:
+        # never produce a silent empty index: roles were declared but nothing resolved.
+        # yaml-less manual configs: nested roles are parsed by the fallback parser;
+        # flat role_* keys also work; installing PyYAML is the full-featured path.
+        print("ERROR: 0 files to index — check mode/roles. In yaml-less environments the "
+              "fallback parser supports nested roles (see config.example.yaml) and flat "
+              "role_* keys; installing PyYAML enables the full config.", file=sys.stderr)
+        return 3
 
     out_dir = cfg.get("output_dir") or os.path.dirname(os.path.abspath(args.config or "config.yaml"))
     if not os.path.isabs(out_dir):
@@ -541,6 +586,27 @@ def demo():
     flat = _parse_fallback("mode: manual\nrole_rules: CLAUDE.md, AGENTS.md\nrole_todos: docs/TODO.md\n")
     assert flat["mode"] == "manual" and flat["roles"]["rules"] == ["CLAUDE.md", "AGENTS.md"], \
         f"C2 flat roles failed: {flat}"
+
+    # C3. yaml-less NESTED roles (the SHIPPED config.example shape) — regression
+    # for the "nested roles silently lost without yaml" defect: inline + block lists
+    nested = _parse_fallback(
+        "mode: manual\n"
+        "roles:\n"
+        "  rules: [CLAUDE.md]\n"
+        "  todos:\n"
+        "    - docs/TODO.md\n"
+        "    - ~/todo.txt\n"
+        "  journal: []\n"
+        "must_read_extra:\n"
+        "  - path: README.md\n"
+        "    name: Readme\n"
+    )
+    assert nested["mode"] == "manual", f"C3 mode failed: {nested}"
+    assert nested["roles"]["rules"] == ["CLAUDE.md"], f"C3 inline list failed: {nested['roles']}"
+    assert nested["roles"]["todos"] == ["docs/TODO.md", "~/todo.txt"], f"C3 block list failed: {nested['roles']}"
+    assert nested["roles"]["journal"] == [], f"C3 empty subkey failed: {nested['roles']}"
+    assert len(nested["must_read_extra"]) == 1 and nested["must_read_extra"][0]["path"] == "README.md", \
+        f"C3 must_read_extra after roles failed: {nested}"
 
     # D. index build still works (3 scenarios from 0.2.x)
     p = os.path.join(d, "t.md")

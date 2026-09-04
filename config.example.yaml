@@ -7,6 +7,12 @@
 #            (0.2.x-style full control).
 #   internal — fixed-layout mode for the maintainers' own vault; roles come
 #            from config, no discovery.
+#
+# YAML-less environments (no PyYAML installed): the built-in fallback parser
+# reads this exact file shape — mode, nested `roles:` (inline `[a, b]` lists or
+# indented block lists) and the extra sections below. Flat role_* keys also work
+# as an alternative (`role_rules: CLAUDE.md, AGENTS.md`). If roles are declared
+# but nothing resolves, the script errors out instead of writing an empty index.
 mode: auto
 
 # Semantic roles → real files. Each role may hold several paths; order = read order.
