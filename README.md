@@ -19,7 +19,7 @@ Evermind hands your agent a **shift handover** before it starts working:
 - **Checks a change index** (auto-generated, hash-based) before re-reading secondary files — unchanged files cost ~0
 - **Defers everything else** until it is actually needed
 
-Measured on our own production system: recovery drops from **~44K to ~12K tokens** (~70% less). When the host already injects identity memory (e.g. Hermes), the duplicated read is skipped automatically — **up to 85%+ total savings**.
+Measured on our own production system: recovery drops from **~44K to ~12K tokens** (~70% less). When the host already injects identity memory (e.g. Hermes), the duplicated read is skipped automatically — **~55-75% cumulative savings** (measured 2026-09-04).
 
 ## Quick start
 
@@ -45,7 +45,7 @@ Then, at the start of each new session, instruct your agent to follow `SKILL.md`
 
 | Platform | How to use |
 |---|---|
-| **Hermes** (Nous Research) | Drop into the agent's `skills/` directory; invoke "recover memory" per session or wire SKILL.md into a session-reset hook. Hermes injects SOUL/MEMORY/USER automatically — the skill detects host-injected identity and skips duplicate reads (the 85%+ case). |
+| **Hermes** (Nous Research) | Drop into the agent's `skills/` directory; invoke "recover memory" per session or wire SKILL.md into a session-reset hook. Hermes injects SOUL/MEMORY/USER automatically — the skill detects host-injected identity and skips duplicate reads (the 55-75% cumulative case). |
 | **ClawHub / OpenClaw** | Dual-compatible frontmatter (standard + `metadata.hermes`). Install into the skills directory or via your hub client. |
 | **Claude Code / Cursor / Codex** | Copy the folder into the project or agent skills directory (`~/.claude/skills/`, etc.); instruct the agent to follow SKILL.md at session start. |
 | **Any LLM, any OS** | Recovery logic is pure convention + one Python stdlib script — model-agnostic; Windows / macOS / Linux; no GPU. |
@@ -80,7 +80,7 @@ flowchart TD
 
 `scripts/memory_index.py` hashes every L2-tracked file (md5 + 24h freshness window) and writes a human-readable `memory_index.md`. No index → all-or-nothing. With an index → read the few files that changed.
 
-> Honest numbers: ~12K is our measured tiered-recovery cost vs ~44K naive. ~6.5K is a projection for hosts that already inject identity (44K → 12K → 6.5K = ~85% cumulative). Highest-value users: heavy multi-session automation (many sessions/day).
+> Honest numbers: ~12K is our measured tiered-recovery cost vs ~44K naive (~70% less). ~55-75% cumulative is our measured range for hosts that already inject identity (the duplicate identity read is skipped). Highest-value users: heavy multi-session automation (many sessions/day).
 
 ## Configuration
 

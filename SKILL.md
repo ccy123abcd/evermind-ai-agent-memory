@@ -1,7 +1,7 @@
 ---
 name: evermind-ai-agent-memory
-version: 0.1.1
-description: Use when starting a new session and the assistant needs to recall who the user is and where work left off. Tiered progressive memory recovery — always read the core layer, check an auto-generated change index before re-reading secondary files, defer the rest until needed. Cuts recovery token cost ~70% versus reading everything every session (85%+ when the host already injects identity memory).
+version: 0.2.0
+description: Use when starting a new session and the assistant needs to recall who the user is and where work left off. Tiered progressive memory recovery — always read the core layer, check an auto-generated change index before re-reading secondary files, defer the rest until needed. Cuts recovery token cost ~70% (measured ~44K to ~12K; ~55-75% cumulative when the host already injects identity memory).
 author: Evermind
 license: MIT-0
 metadata:
@@ -20,15 +20,15 @@ Every new session feels like "day one at work"? This skill hands the agent a **s
 
 | Platform | How to use |
 |---|---|
-| **Hermes** (Nous Research) | Drop this folder into the agent's `skills/` directory. On each new session say "recover memory" (or wire the SKILL.md procedure into a session-reset hook). Hermes injects SOUL/MEMORY/USER automatically — the skill detects host-injected identity and skips duplicate reads (the 85%+ savings case). |
-| **ClawHub / OpenClaw** | Frontmatter is dual-compatible (standard fields + `metadata.hermes`). Install via `clawhub install txj/tiered-memory` or copy into the agent's skills dir. |
+| **Hermes** (Nous Research) | Drop this folder into the agent's `skills/` directory. On each new session say "recover memory" (or wire the SKILL.md procedure into a session-reset hook). Hermes injects SOUL/MEMORY/USER automatically — the skill detects host-injected identity and skips duplicate reads (the 55-75% cumulative savings case). |
+| **ClawHub / OpenClaw** | Frontmatter is dual-compatible (standard fields + `metadata.hermes`). Install via `clawhub install evermind-ai-agent-memory` or copy into the agent's skills dir. |
 | **Claude Code / Cursor / Codex / other SKILL.md agents** | Copy this folder into the project or agent skills directory; at the start of a session, instruct the agent to follow SKILL.md (the procedure is model-agnostic). |
 | **Any LLM, any OS** | Recovery logic is pure convention + one Python stdlib script — model-agnostic, runs on Windows/macOS/Linux, no GPU. |
 
 ## What it gives you
 
 - 🧠 **No more lost context**: identity, rules, todos always loaded — nothing important silently dropped; new sessions resume where you left off
-- ⚡ **Fast + cheap**: L3 always-read + L2 change-indexed reads (hash check — unchanged files are never re-read). ~44K → ~12K tokens per recovery (~70% less); with host-injected identity skipped, up to 85%+ total
+- ⚡ **Fast + cheap**: L3 always-read + L2 change-indexed reads (hash check — unchanged files are never re-read). ~44K → ~12K tokens per recovery (~70% less); with host-injected identity skipped, ~55-75% cumulative (measured 2026-09-04)
 - 🔒 **100% local**: pure local scripts, zero API cost, nothing leaves your machine
 
 ## How it works
