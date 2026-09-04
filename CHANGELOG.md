@@ -23,6 +23,9 @@
 
 ### Fixed
 - config.example.yaml key mismatches (`note:` vs code's `desc:`; `index_output` vs `output_index`) resolved by full rewrite.
+- yaml-less fallback silently dropped legacy 0.2.x configs (0-file empty index, rc0, no stderr) — fallback no longer pre-seeds empty extras (which made migration never run), legacy `must_read`/`tracked_files` migrate for real (7eddf32).
+- Fallback parser could not parse the shipped nested `roles:` shape — no-yaml + manual roles produced a silent empty index while the YAML interpreter indexed 2+ files; fallback now parses nested roles (inline `[a,b]`, block list, empty subkey) and errors out loudly (rc3 + stderr) on declared-but-empty roles instead of writing a silent empty index (6f03ea6).
+- Fallback kept literal YAML quotes on scalar values (`"CLAUDE.md"` → path with quotes → `read failed` rows with content dropped while stdout still said OK rc0) — diverging from the YAML interpreter for the same config. `_unquote()` now strips one matching quote pair on every fallback value path (roles inline/block items, flat `role_*` items, extra dict path/name/desc, mode, scalar keys); quoted configs parse identically under both interpreters (890a35e).
 
 ## [0.2.2] - 2026-09-04
 
