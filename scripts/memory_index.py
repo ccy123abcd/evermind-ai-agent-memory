@@ -66,6 +66,16 @@ def expand(p):
     return os.path.abspath(os.path.expanduser(p))
 
 
+def _unquote(v):
+    """Strip one pair of matching ' or " quotes from a scalar (YAML-style).
+    Applied everywhere the fallback parser reads a value so quoted configs
+    parse identically to the yaml interpreter (never literal quotes in paths)."""
+    v = v.strip()
+    if len(v) >= 2 and v[0] == v[-1] and v[0] in ("'", '"'):
+        return v[1:-1]
+    return v
+
+
 def _parse_fallback(text):
     """Minimal yaml-subset parser. Supports the SHIPPED config.example shape:
     - mode: auto|manual|internal
@@ -96,14 +106,14 @@ def _parse_fallback(text):
                 sub_k, _, sub_v = stripped.partition(":")
                 sub_k, sub_v = sub_k.strip(), sub_v.strip()
                 roles_key = sub_k
-                if sub_v.startswith("["):  # inline list: rules: [a.md, b.md]
+                if sub_v.startswith("["):  # inline list: rules: ["a.md", "b.md"]
                     inner = sub_v[1:].rsplit("]", 1)[0]
-                    cfg.setdefault("roles", {})[roles_key] = [p.strip() for p in inner.split(",") if p.strip()]
+                    cfg.setdefault("roles", {})[roles_key] = [_unquote(p) for p in inner.split(",") if p.strip()]
                 else:
                     cfg.setdefault("roles", {})[roles_key] = []
                 continue
             if indent == 4 and stripped.startswith("- ") and roles_key:
-                cfg["roles"].setdefault(roles_key, []).append(stripped[2:].strip())
+                cfg["roles"].setdefault(roles_key, []).append(_unquote(stripped[2:]))
                 continue
             if indent == 0:
                 section = None  # left roles block
@@ -119,7 +129,7 @@ def _parse_fallback(text):
             if ":" in body:
                 k, _, v = body.partition(":")
                 if k.strip() in item:
-                    item[k.strip()] = v.strip()
+                    item[k.strip()] = _unquote(v)
             continue
         if ":" not in stripped:
             continue
@@ -133,21 +143,21 @@ def _parse_fallback(text):
             section = k
             current = None
         elif k == "mode":
-            cfg["mode"] = v
+            cfg["mode"] = _unquote(v)
             section = None
             current = None
         elif k.startswith("role_"):
-            # flat roles alternative: role_rules: a.md, b.md
+            # flat roles alternative: role_rules: "a.md", b.md
             name = k[len("role_"):]
-            cfg.setdefault("roles", {})[name] = [p.strip() for p in v.split(",") if p.strip()]
+            cfg.setdefault("roles", {})[name] = [_unquote(p) for p in v.split(",") if p.strip()]
             section = None
             current = None
         elif k in ("memory_root", "scan_root", "output_dir", "output_index", "output_state"):
-            cfg[k] = v
+            cfg[k] = _unquote(v)
             section = None
             current = None
         elif current is not None and k in ("path", "name", "desc"):
-            current[k] = v
+            current[k] = _unquote(v)
     return cfg
 
 
@@ -607,6 +617,26 @@ def demo():
     assert nested["roles"]["journal"] == [], f"C3 empty subkey failed: {nested['roles']}"
     assert len(nested["must_read_extra"]) == 1 and nested["must_read_extra"][0]["path"] == "README.md", \
         f"C3 must_read_extra after roles failed: {nested}"
+
+    # C4. quoted scalars parse identically to unquoted (regression: fallback
+    # used to keep literal quotes -> paths like '\"CLAUDE.md\"' read-failed)
+    quoted = _parse_fallback(
+        'mode: "manual"\n'
+        'roles:\n'
+        '  rules: ["CLAUDE.md", \'AGENTS.md\']\n'
+        '  todos:\n'
+        '    - "docs/TODO.md"\n'
+        "role_journal: 'journal'\n"
+        'must_read_extra:\n'
+        '  - path: "README.md"\n'
+        "    name: 'Readme'\n"
+    )
+    assert quoted["mode"] == "manual", f"C4 mode unquote failed: {quoted['mode']!r}"
+    assert quoted["roles"]["rules"] == ["CLAUDE.md", "AGENTS.md"], f"C4 inline unquote failed: {quoted['roles']}"
+    assert quoted["roles"]["todos"] == ["docs/TODO.md"], f"C4 block unquote failed: {quoted['roles']}"
+    assert quoted["roles"]["journal"] == ["journal"], f"C4 flat unquote failed: {quoted['roles']}"
+    assert quoted["must_read_extra"][0]["path"] == "README.md" and quoted["must_read_extra"][0]["name"] == "Readme", \
+        f"C4 dict unquote failed: {quoted['must_read_extra']}"
 
     # D. index build still works (3 scenarios from 0.2.x)
     p = os.path.join(d, "t.md")
