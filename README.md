@@ -4,9 +4,9 @@
   <img src="assets/banner.png" alt="Evermind — cross-session memory recovery for AI agents" width="100%">
 </p>
 
-**Cross-session memory recovery for AI agents. Stop your assistant from forgetting — without re-reading everything every session.**
+**Cross-session memory recovery for AI agents. Restore state in ~70% fewer tokens — and switch contexts anytime, at any task boundary, without losing your agent's memory.**
 
-![version](https://img.shields.io/badge/version-0.1.1-blue)
+![version](https://img.shields.io/badge/version-0.2.2-blue)
 ![license](https://img.shields.io/badge/license-MIT--0-green)
 ![platform](https://img.shields.io/badge/platform-Hermes%20%7C%20Claude%20Code%20%7C%20Cursor%20%7C%20OpenClaw-lightgrey)
 ![deps](https://img.shields.io/badge/deps-zero-orange)
@@ -20,6 +20,16 @@ Evermind hands your agent a **shift handover** before it starts working:
 - **Defers everything else** until it is actually needed
 
 Measured on our own production system: recovery drops from **~44K to ~12K tokens** (~70% less). When the host already injects identity memory (e.g. Hermes), the duplicated read is skipped automatically — **~55-75% cumulative savings** (measured 2026-09-04).
+
+### Why this changes your workflow: free context switches
+
+Cheap, reliable recovery turns "start a new session" from a **lossy, expensive operation** into a **free, safe one**. You no longer have to stretch one session until the context breaks — you switch whenever it makes sense:
+
+- task boundary reached? **Switch.** A fresh, clean context works better than a bloated one
+- long-running project? **Switch at milestones** — each session resumes exactly where the last one left off
+- context getting heavy? **Switch early** instead of waiting for compression to kick in
+
+Every switch costs a few thousand tokens to recover instead of tens of thousands of re-explaining — so the optimal move shifts from "squeeze one session dry" to "cut at the cleanest seam". This is the pattern we run in production (dozens of sessions per day, cross-session handover as the default).
 
 ## Quick start
 

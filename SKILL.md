@@ -1,7 +1,7 @@
 ---
 name: evermind-ai-agent-memory
-version: 0.2.1
-description: Never re-explain yourself to your AI. Evermind cuts session memory-recovery cost ~70% (measured 44K→12K tokens) — essentials always read, a change index skips everything unchanged. 100% local, zero deps, works with Claude Code, Hermes, Cursor & OpenClaw.
+version: 0.2.2
+description: Never re-explain yourself. Evermind restores cross-session state in ~70% fewer tokens (measured 44K→12K) — so you can switch contexts anytime, at any task boundary, without losing your agent's memory. 100% local, zero deps, works with Claude Code, Hermes, Cursor & OpenClaw.
 author: Evermind
 license: MIT-0
 metadata:

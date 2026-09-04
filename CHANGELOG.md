@@ -7,6 +7,12 @@
 ### Changed
 - (none pending)
 
+## [0.2.2] - 2026-09-04
+
+### Changed
+- Positioning upgrade (user insight): headline benefit reframed as **free context switches** — cheap reliable recovery means users can switch sessions at any task boundary without losing state, instead of stretching one context until it breaks. README adds a "Why this changes your workflow" section; storefront description now leads with cross-session restore + switch-anytime + ~70% fewer tokens.
+- README version badge corrected to 0.2.2 (was stale 0.1.1 through 0.2.0/0.2.1).
+
 ## [0.2.1] - 2026-09-04
 
 ### Changed
