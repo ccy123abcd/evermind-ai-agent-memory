@@ -58,69 +58,88 @@ JOURNAL_GLOB = re.compile(r"^\d{4}-\d{2}-\d{2}\.(md|txt|markdown)$")
 EXCLUDE_DIRS = {".git", ".obsidian", ".trash", ".venv", "node_modules",
                 ".evermind", "__pycache__", ".idea", ".vscode"}
 DISCOVERY_FILE = "discovery.json"
+TIP_SAAS = ("tip: Evermind targets local files. SaaS-only memory? "
+            "Export it to a local folder first.")
 
 
 def expand(p):
     return os.path.abspath(os.path.expanduser(p))
 
 
+def _parse_fallback(text):
+    """Minimal yaml-subset parser (routes by current section). Supports:
+    - mode: auto|manual|internal
+    - flat role keys: role_rules: CLAUDE.md, docs/rules.md   (comma-separated ok)
+    - list sections: must_read / tracked_files / must_read_extra / tracked_files_extra
+    Does NOT pre-seed empty lists — so legacy keys appear only when present and
+    migration guards can tell 'absent' from 'present-but-empty'.
+    """
+    cfg = {"mode": "auto", "roles": {}}
+    section = None
+    current = None
+    for line in text.splitlines():
+        line = line.split("#")[0].strip()
+        if not line:
+            continue
+        if line.startswith("- "):
+            if section is None:
+                continue
+            item = {"path": "", "name": "", "desc": ""}
+            cfg.setdefault(section, []).append(item)
+            current = item
+            body = line[2:].strip()
+            if ":" in body:
+                k, _, v = body.partition(":")
+                if k.strip() in item:
+                    item[k.strip()] = v.strip()
+            continue
+        if ":" not in line:
+            continue
+        k, _, v = line.partition(":")
+        k, v = k.strip(), v.strip()
+        if k in ("must_read", "tracked_files", "must_read_extra", "tracked_files_extra"):
+            section = k
+            current = None
+        elif k == "mode":
+            cfg["mode"] = v
+            section = None
+            current = None
+        elif k.startswith("role_"):
+            # flat roles for yaml-less environments: role_rules: a.md, b.md
+            name = k[len("role_"):]
+            cfg.setdefault("roles", {})[name] = [p.strip() for p in v.split(",") if p.strip()]
+            section = None
+            current = None
+        elif k in ("memory_root", "scan_root", "output_dir", "output_index", "output_state"):
+            cfg[k] = v
+            section = None
+            current = None
+        elif current is not None and k in ("path", "name", "desc"):
+            current[k] = v
+    return cfg
+
+
 def load_config(path):
     try:
-        import yaml
+        import yaml  # use yaml when available; degrade gracefully otherwise (see fallback)
     except ImportError:
         yaml = None
     if yaml is not None:
         with open(path, "r", encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
-    # fallback: minimal yaml subset (routes by current section)
-    cfg = {"mode": "auto", "roles": {}, "must_read_extra": [],
-           "tracked_files_extra": [], "output_dir": ".",
-           "output_index": "memory_index.md", "output_state": "memory_index_state.json"}
-    section = None
-    current = None
     with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.split("#")[0].strip()
-            if not line:
-                continue
-            if line.startswith("- "):
-                if section is None:
-                    continue
-                item = {"path": "", "name": "", "desc": ""}
-                cfg.setdefault(section, []).append(item)
-                current = item
-                body = line[2:].strip()
-                if ":" in body:
-                    k, _, v = body.partition(":")
-                    if k.strip() in item:
-                        item[k.strip()] = v.strip()
-                continue
-            if ":" not in line:
-                continue
-            k, _, v = line.partition(":")
-            k, v = k.strip(), v.strip()
-            if k in ("must_read", "tracked_files", "must_read_extra", "tracked_files_extra"):
-                section = k
-                current = None
-            elif k == "mode":
-                cfg["mode"] = v
-                section = None
-            elif k in ("memory_root", "output_dir", "output_index", "output_state"):
-                cfg[k] = v
-                section = None
-                current = None
-            elif current is not None and k in ("path", "name", "desc"):
-                current[k] = v
-    return cfg
+        return _parse_fallback(f.read())
 
 
 def migrate_legacy(cfg):
-    """0.2.x config -> 0.3: preserve semantics, never guess roles."""
-    if "must_read" in cfg and "must_read_extra" not in cfg:
+    """0.2.x config -> 0.3: preserve semantics, never guess roles.
+    Guards test CONTENT, because fallback parser never pre-seeds empty lists
+    (pre-seeding made 'not in cfg' always False and silently dropped legacy files)."""
+    if cfg.get("must_read") and not cfg.get("must_read_extra"):
         cfg["must_read_extra"] = cfg.pop("must_read")
-    if "tracked_files" in cfg and "tracked_files_extra" not in cfg:
+    if cfg.get("tracked_files") and not cfg.get("tracked_files_extra"):
         cfg["tracked_files_extra"] = cfg.pop("tracked_files")
-    if "memory_root" in cfg:
+    if "memory_root" in cfg and "scan_root" not in cfg:
         cfg.setdefault("scan_root", cfg["memory_root"])
     return cfg
 
@@ -277,7 +296,7 @@ def print_discovery(roles, missing):
     if missing:
         print(f"  missing: {', '.join(missing)}")
     if all(not v for v in roles.values()):
-        print("  tip: Evermind targets local files. SaaS-only memory? Export it to a local folder first.")
+        print("  " + TIP_SAAS)
 
 
 # ── index ────────────────────────────────────────────────────────────────────
@@ -317,6 +336,27 @@ def role_file_items(roles, base):
                 continue
             items.append({"path": resolve(p, base), "name": f"[{role}] {os.path.basename(p)}", "desc": role})
     return items
+
+
+def expand_role_dirs(roles, base):
+    """Resolve configured roles: FILE kept as-is; DIRECTORY -> newest dated file
+    inside (same rule discovery uses). Applies to manual/internal modes, where
+    roles come from config rather than discovery."""
+    out = {}
+    for role, paths in roles.items():
+        resolved = []
+        for p in (paths or []):
+            if p == "injected":
+                resolved.append(p)
+                continue
+            full = expand(resolve(p, base))
+            if os.path.isdir(full):
+                hit = _latest_dated_in(full)
+                resolved.append(hit if hit else full)
+            else:
+                resolved.append(full)
+        out[role] = resolved
+    return out
 
 
 def build(out_path, state_path, files):
@@ -409,14 +449,14 @@ def main():
         if disc and discovery_still_valid(disc):
             roles = disc.get("roles", {})
         else:
-            roles, _ = discover(base)
-            write_discovery(base, roles, [])
+            roles, missing = discover(base)
+            write_discovery(base, roles, missing)  # missing propagated (fix 3b)
         files = role_file_items(roles, base)
-    elif mode == "internal":
-        # fixed-layout (maintainer) config: roles come straight from config
-        roles = cfg.get("roles", {})
+    else:
+        # manual / internal: roles come straight from config (fixed layout).
+        # Directory roles resolve to the newest dated file inside.
+        roles = expand_role_dirs(cfg.get("roles", {}) or {}, base)
         files = role_file_items(roles, base)
-    # manual / internal extras always apply
     for f in cfg.get("must_read_extra", []):
         f = dict(f)
         f["path"] = resolve(f["path"], base)
@@ -468,6 +508,7 @@ def demo():
     os.makedirs(env3)
     r3, m3 = discover(env3)
     assert "rules" in m3 and "todos" in m3 and "journal" in m3, f"A3 missing wrong: {m3}"
+    assert TIP_SAAS.startswith("tip:") and "SaaS" in TIP_SAAS, "A3 SaaS tip constant missing"
 
     # B. discovery.json lifecycle: valid -> reused; file deleted -> invalid
     roles, _ = discover(env1)
@@ -476,12 +517,30 @@ def demo():
     os.remove(r1["journal"][0])
     assert not discovery_still_valid(load_discovery(env1)), "B deleted file must invalidate"
 
-    # C. legacy config migration preserves L2 semantics
-    cfg = {"memory_root": ".", "must_read": [{"path": "a.md", "desc": "x"}],
-           "tracked_files": [{"path": "b.md", "desc": "y"}]}
-    cfg = migrate_legacy(cfg)
-    assert cfg["must_read_extra"] and "tracked_files" not in cfg, "C legacy migration failed"
-    assert "tracked_files_extra" in cfg, "C L2 semantics must be preserved as extra"
+    # C. legacy config migration via the REAL yaml-less fallback parser
+    # (regression for the silent-drop bug: fallback must not pre-seed extras,
+    #  and migrate must move legacy lists by CONTENT)
+    legacy_text = (
+        "memory_root: .\n"
+        "must_read:\n"
+        "  - path: a.md\n"
+        "    name: A file\n"
+        "tracked_files:\n"
+        "  - path: b.md\n"
+        "    desc: B file\n"
+    )
+    lc = _parse_fallback(legacy_text)
+    assert len(lc.get("must_read", [])) == 1 and len(lc.get("tracked_files", [])) == 1, \
+        f"C fallback parse failed: {lc}"
+    lc = migrate_legacy(lc)
+    assert len(lc.get("must_read_extra", [])) == 1 and "must_read" not in lc, "C must_read migration failed"
+    assert len(lc.get("tracked_files_extra", [])) == 1 and "tracked_files" not in lc, "C tracked migration failed"
+    assert lc["must_read_extra"][0]["path"] == "a.md", "C content lost in migration"
+
+    # C2. yaml-less flat roles: role_rules / role_todos -> cfg["roles"]
+    flat = _parse_fallback("mode: manual\nrole_rules: CLAUDE.md, AGENTS.md\nrole_todos: docs/TODO.md\n")
+    assert flat["mode"] == "manual" and flat["roles"]["rules"] == ["CLAUDE.md", "AGENTS.md"], \
+        f"C2 flat roles failed: {flat}"
 
     # D. index build still works (3 scenarios from 0.2.x)
     p = os.path.join(d, "t.md")

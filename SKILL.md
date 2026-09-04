@@ -65,7 +65,7 @@ Discovered roles are cached in `.evermind/discovery.json` — the agent reads it
 
 ## Usage (start of every new session)
 
-1. **Step 0 — Discover (first time or when sources moved)**: run `python scripts/memory_index.py --discover .` — it locates your memory carriers by common conventions (see the candidate list in the script header) and writes `.evermind/discovery.json`. Python unavailable? Fall back to the hand-list below (derived from the script; the script is authoritative). At every recovery, first **stat the stored paths** — any missing/unreadable source triggers re-discovery (never reuse stale paths).
+1. **Step 0 — Discover (first time or when sources moved)**: run `python scripts/memory_index.py --discover .` — it locates your memory carriers by common conventions (candidate list lives in the script header constants) and writes `.evermind/discovery.json`. Python unavailable? Fall back to the hand-list below (derived from the script; the script is authoritative). At every recovery, first **stat the stored paths** — any missing/unreadable source triggers re-discovery (never reuse stale paths).
 2. **Read the L3 must-read files**: roles resolved in step 0/1 (rules, identity, todos, journal) + `must_read_extra`. Every one, no shortcuts. Host injected identity (Hermes/OpenClaw)? Mark `identity ✅ (host)` and skip the file probe.
 3. **Read the change index** `memory_index.md`:
    - ✅ new change → read that file in full
@@ -97,9 +97,9 @@ Switching is safe and cheap: that is the whole point of Evermind (recovery ≈ 1
 
 ## Manual discovery fallback (Python unavailable)
 
-Look for, in order (the script `DISCOVER_CANDIDATES` is authoritative — this is a summary):
+Look for, in order (the script header candidate constants are authoritative — this is a summary):
 
-- **rules/identity**: `CLAUDE.md`, `AGENTS.md`, `.cursor/rules/` in the project; `~/.claude/CLAUDE.md` in home
+- **rules/identity**: `CLAUDE.md`, `AGENTS.md`, `.cursor/rules/` in the project; `~/.claude/CLAUDE.md` in home (candidate constants in the script header are authoritative)
 - **todos**: `TODO.md` / `todo.md` / `todo.txt` / `tasks.md` (root or `docs/`); `~/todo.txt` or `~/.todo/` (todo.txt-cli)
 - **journal**: newest `YYYY-MM-DD.md/.txt` under `journal/`, `logs/`, `notes/`, or `docs/journal/`
 - **profile**: only if you configured one
