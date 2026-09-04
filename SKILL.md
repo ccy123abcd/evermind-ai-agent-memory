@@ -1,7 +1,7 @@
 ---
 name: evermind-ai-agent-memory
-version: 0.2.0
-description: Use when starting a new session and the assistant needs to recall who the user is and where work left off. Tiered progressive memory recovery — always read the core layer, check an auto-generated change index before re-reading secondary files, defer the rest until needed. Cuts recovery token cost ~70% (measured ~44K to ~12K; ~55-75% cumulative when the host already injects identity memory).
+version: 0.2.1
+description: Never re-explain yourself to your AI. Evermind cuts session memory-recovery cost ~70% (measured 44K→12K tokens) — essentials always read, a change index skips everything unchanged. 100% local, zero deps, works with Claude Code, Hermes, Cursor & OpenClaw.
 author: Evermind
 license: MIT-0
 metadata:

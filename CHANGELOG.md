@@ -2,6 +2,16 @@
 
 版本方案:**SemVer 2.0.0**(semver.org)——MAJOR=不兼容大改 / MINOR=向后兼容新功能 / PATCH=向后兼容修 bug;格式遵循 **Keep a Changelog**(keepachangelog.com):每版一节最新在上,日期 ISO 8601,改动按六类 Added/Changed/Deprecated/Removed/Fixed/Security。Unreleased 随做随记,发布时改版本号+日期,顶部重置空 Unreleased。
 
+## [Unreleased]
+
+### Changed
+- (none pending)
+
+## [0.2.1] - 2026-09-04
+
+### Changed
+- Storefront description rewritten benefit-first: "Never re-explain yourself to your AI..." (value hook → quantified savings → platform list), replacing the mechanism-first wording — clearer what users get in the first 3 seconds.
+
 ## [0.2.0] - 2026-09-04
 
 ### Added
