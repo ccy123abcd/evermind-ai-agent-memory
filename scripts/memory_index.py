@@ -23,6 +23,8 @@ Config shapes:
         roles: {rules: [...], todos: [...], journal: [...]}   # files or dirs
         must_read_extra: [...]    # extra L3 always-read files
         tracked_files_extra: [...] # extra L2 change-tracked files
+        lang: en|zh               # display language for the generated index
+                                  # (default en; zh = Chinese flags/labels)
   Old (0.2.x): must_read: [...] tracked_files: [...] -> migrated: must_read ->
         must_read_extra (keeps L3 meaning), tracked_files -> tracked_files_extra
         (keeps L2 meaning). Roles are NEVER guessed from old flat lists.
@@ -34,9 +36,9 @@ Usage:
   python memory_index.py --config config.yaml --mode internal
   python memory_index.py --demo                # self-test
 
-Published-package note (0.3): the in-system copy is intentionally different —
-the internal build uses its own fixed-layout config (mode internal). Shared
-logic (build/hash/summary) is kept in sync by hand; discovery lives here only.
+Single-source note (0.4.1): this file is the ONE source. The published
+package copy at scripts/memory_index.py is byte-identical (cp); private
+layouts/agent lists live in the maintainers' own private config, never here.
 """
 import argparse, glob, hashlib, json, os, re, sys, tempfile
 from datetime import datetime, timedelta
@@ -60,6 +62,47 @@ EXCLUDE_DIRS = {".git", ".obsidian", ".trash", ".venv", "node_modules",
 DISCOVERY_FILE = "discovery.json"
 TIP_SAAS = ("tip: Evermind targets local files. SaaS-only memory? "
             "Export it to a local folder first.")
+
+# Display-language word table (template parametrisation). Public default is en
+# (identical to 0.4.0 behaviour); `lang: zh` in the config selects Chinese row
+# structure/flags. Zero private terms by design — titles, flags and row labels
+# only, never role names, names or paths (those all come from config data).
+_WORDS = {
+    "en": {
+        "title": "# memory index (auto-generated · %s)",
+        "purpose1": ("> Purpose: change detection for the conditional layer (L2). "
+                     "✅ new change -> read the file in full; "
+                     "⏸ unchanged -> read only this index summary."),
+        "purpose2": ("> The must-read layer (L3) is read every session; "
+                     "the on-demand layer (L1) is read only when needed."),
+        "heading": "## Conditional layer (L2) - read in full only on change",
+        "flag_new": "✅ new change",
+        "flag_unchanged": "⏸ unchanged",
+        "summary_line": "{title}({n} lines/{kb}KB)",
+        "read_failed": "read failed",
+        "row_fail": "⚠️ read failed: {e} | read in full to confirm",
+        "row": "- {name} | {summary} | {flag} | changed {t} | {desc}",
+        "ok": "OK index written → {out} ({n} files, {c} new changes)",
+    },
+    "zh": {
+        "title": "# 记忆索引(自动生成 · %s)",
+        "purpose1": ("> 用途:条件读层(L2)变更检测。档案 ✅变更→读摘要行即可;"
+                     "⏸ 未变更→只读本索引摘要。"),
+        "purpose2": "> 必读层(L3)每会话必读;按需层(L1)用到才读。",
+        "heading": "## 条件读层(L2)— 变更才读全文",
+        "flag_new": "✅新变更",
+        "flag_unchanged": "⏸未变更",
+        "summary_line": "{title}({n}行/{kb}KB)",
+        "read_failed": "读失败",
+        "row_fail": "⚠️读取失败: {e} | 建议读全文确认",
+        "row": "- {name} | {summary} | {flag} | 改于 {t} | {desc}",
+        "ok": "OK 索引已生成 → {out}({n} 文件,新变更 {c} 个)",
+    },
+}
+
+
+def _words(lang):
+    return _WORDS.get(lang or "en", _WORDS["en"])
 
 
 def expand(p):
@@ -88,6 +131,8 @@ def _parse_fallback(text):
     - flat role keys as an alternative: role_rules: a.md, b.md
     - list sections: must_read / tracked_files / must_read_extra / tracked_files_extra
       (dict items: path/name/desc)
+    - top-level scalars: mode / memory_root / scan_root / output_dir / output_index /
+      output_state / lang (en|zh display language for the generated index)
     Does NOT pre-seed empty lists — legacy keys appear only when present.
     """
     cfg = {"mode": "auto", "roles": {}}
@@ -144,6 +189,10 @@ def _parse_fallback(text):
             current = None
         elif k == "mode":
             cfg["mode"] = _unquote(v)
+            section = None
+            current = None
+        elif k == "lang":
+            cfg["lang"] = _unquote(v)
             section = None
             current = None
         elif k.startswith("role_"):
@@ -343,7 +392,8 @@ def print_discovery(roles, missing):
 
 # ── index ────────────────────────────────────────────────────────────────────
 
-def summary(path):
+def summary(path, lang="en"):
+    w = _words(lang)
     try:
         with open(path, "r", encoding="utf-8", errors="ignore") as f:
             head = f.read(2000)
@@ -351,9 +401,9 @@ def summary(path):
         title = m.group(1).strip()[:50] if m else os.path.basename(path)
         n = sum(1 for _ in open(path, "r", encoding="utf-8", errors="ignore"))
         size = os.path.getsize(path)
-        return f"{title}({n} lines/{max(1, size // 1024)}KB)"
+        return w["summary_line"].format(title=title, n=n, kb=max(1, size // 1024))
     except Exception:
-        return "read failed"
+        return w["read_failed"]
 
 
 def md5(path):
@@ -401,7 +451,8 @@ def expand_role_dirs(roles, base):
     return out
 
 
-def build(out_path, state_path, files):
+def build(out_path, state_path, files, lang="en"):
+    w = _words(lang)
     prev = {}
     if os.path.exists(state_path):
         try:
@@ -411,12 +462,12 @@ def build(out_path, state_path, files):
     now = datetime.now()
     cutoff = now - timedelta(hours=24)
     lines = [
-        "# memory index (auto-generated · %s)" % now.strftime("%Y-%m-%d %H:%M"),
+        w["title"] % now.strftime("%Y-%m-%d %H:%M"),
         "",
-        "> Purpose: change detection for the conditional layer (L2). ✅ new change -> read the file in full; ⏸ unchanged -> read only this index summary.",
-        "> The must-read layer (L3) is read every session; the on-demand layer (L1) is read only when needed.",
+        w["purpose1"],
+        w["purpose2"],
         "",
-        "## Conditional layer (L2) - read in full only on change",
+        w["heading"],
         "",
     ]
     new_state = {}
@@ -432,17 +483,18 @@ def build(out_path, state_path, files):
             new_state[path] = h
             if changed:
                 n_changed += 1
-            flag = "✅ new change" if changed else "⏸ unchanged"
+            flag = w["flag_new"] if changed else w["flag_unchanged"]
             lines.append(
-                f"- {name} | {summary(path)} | {flag} | changed {mtime.strftime('%m-%d %H:%M')} | {desc}"
+                w["row"].format(name=name, summary=summary(path, lang), flag=flag,
+                                t=mtime.strftime('%m-%d %H:%M'), desc=desc)
             )
         except Exception as e:
-            lines.append(f"- {name} | ⚠️ read failed: {e} | read in full to confirm")
+            lines.append(w["row_fail"].format(name=name, e=e))
     with open(out_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
     with open(state_path, "w", encoding="utf-8") as f:
         json.dump(new_state, f, ensure_ascii=False, indent=1)
-    print(f"OK index written → {out_path} ({len(files)} files, {n_changed} new changes)")
+    print(w["ok"].format(out=out_path, n=len(files), c=n_changed))
 
 
 def main():
@@ -486,6 +538,7 @@ def main():
         return 0
     cfg = migrate_legacy(load_config(args.config or "config.yaml"))
     mode = args.mode or cfg.get("mode", "auto")
+    lang = cfg.get("lang", "en")
     base = cfg.get("memory_root") or cfg.get("scan_root") or os.path.dirname(os.path.abspath(args.config or "config.yaml"))
 
     files = []
@@ -527,7 +580,7 @@ def main():
     os.makedirs(out_dir, exist_ok=True)
     build(os.path.join(out_dir, cfg.get("output_index", "memory_index.md")),
           os.path.join(out_dir, cfg.get("output_state", "memory_index_state.json")),
-          files)
+          files, lang)
     return 0
 
 
