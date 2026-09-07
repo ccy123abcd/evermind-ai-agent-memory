@@ -32,7 +32,7 @@ Every new session feels like "day one at work"? This skill makes the agent read 
 - 🔁 **One-line handover**: say "handover" at any task break; the next session starts exactly where you stopped
 - ⚡ **Fast + cheap**: recovery cost ~44K → ~12K tokens (~70% less); with host-injected identity skipped, ~55-75% cumulative (measured 2026-09-04)
 - 🔒 **100% local**: pure local scripts, zero API cost, nothing leaves your machine
-- 📊 **Context health**: see your real context usage and get nudged before a session bloats (30/50/70% thresholds)
+- 📊 **Context health**: see your real context usage and get nudged as you approach the 30/50/70% lines (and well before a session bloats)
 
 ## How it works
 
@@ -148,7 +148,7 @@ The gate is pure stdlib, fails open (no rules file → pass), and writes nothing
 
 Switching sessions is only free if the *next* session knows where the last one stopped. Say **"handover"** (or "交接/收尾") at any task break — a natural stopping point, a finished task, or when a context nudge suggests switching — and the agent writes `.evermind/handover.md` from the template (assets/handover-template.md): ✅ done (what matters next) · 📌 leftover (what's waiting, on whom) · 🔗 pointers (files/tasks that anchor it) · ➡️ next step. Each new handover **overwrites** the previous one; recovery reads it once and **deletes it** (step 6) — a consumed handover must never linger as a stale pointer.
 
-The nudge thresholds above already recommend switching at 50–70%; **before recommending a switch, the agent must write the handover first** — a nudge without a ready handover is just anxiety, not a safe suggestion. Recovery reads the handover if present (step 6); authority always stays with todos/journal, the handover is the fast pointer.
+The nudge bands above are the hard rule: **any nudge — pre-nudge or full nudge — goes out only after `.evermind/handover.md` has been refreshed** (see Context threshold nudges). A nudge without a ready handover is just anxiety, not a safe suggestion. Recovery reads the handover if present (step 6); authority always stays with todos/journal, the handover is the fast pointer.
 
 ## Manual discovery fallback (Python unavailable)
 

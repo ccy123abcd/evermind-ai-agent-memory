@@ -118,7 +118,7 @@ Outputs: `memory_index.md` (readable) + `memory_index_state.json` (state — don
 3. Consult L1 detail docs only when a task needs them.
 4. **Rules alignment** — from the rules file just read, restate the imperative rules (do / don't) and write `.evermind/rules.json` for the guardrail. Optional hard enforcement: wire `scripts/rule_gate.py` into a platform hook (Claude Code PreToolUse example in SKILL.md).
 5. Report honestly with sources — list any role that came up empty; never claim a recovery that didn't happen.
-6. Context gauge — report real usage % when the platform exposes it (Hermes `/status`, Claude Code `/context`); nudge at 50% / 70% (full table in SKILL.md). Write the handover **before** recommending a switch.
+6. Context gauge — report real usage % when the platform exposes it (Hermes `/status`, Claude Code `/context`); check at every visible reading, nudge when approaching a band (25–30 / 45–50 / 65–70) as well as inside it, and **refresh `.evermind/handover.md` before any nudge goes out** — the nudge is the ready signal (full band table in SKILL.md).
 7. Handover — at any task break say **"handover"**: the agent writes `.evermind/handover.md` from the template; the next session reads it first.
 
 ## Repository layout
