@@ -1,4 +1,4 @@
-# Evermind — example configuration (0.3)
+# Evermind — example configuration (0.4)
 # Copy to config.yaml and adjust. Three modes:
 #   auto     (default) — roles auto-discovered from common file conventions.
 #            A fresh install works with NO config at all: just run

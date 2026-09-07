@@ -6,7 +6,7 @@
 
 **Cross-session memory recovery for AI agents. Restore state in ~70% fewer tokens — and switch contexts anytime, at any task boundary, without losing your agent's memory.**
 
-![version](https://img.shields.io/badge/version-0.3.0-blue)
+![version](https://img.shields.io/badge/version-0.4.0-blue)
 ![license](https://img.shields.io/badge/license-MIT--0-green)
 ![platform](https://img.shields.io/badge/platform-Hermes%20%7C%20Claude%20Code%20%7C%20Cursor%20%7C%20OpenClaw-lightgrey)
 ![deps](https://img.shields.io/badge/deps-zero-orange)
@@ -16,8 +16,10 @@ Every new session feels like "day one at work"? Your agent doesn't know who you 
 Evermind hands your agent a **shift handover** before it starts working:
 
 - **Always reads** the core layer — identity, rules, user profile, latest todos, latest work log (nothing important silently dropped)
+- **Re-states your rules** every session (rules alignment) — the do's and don'ts you set stay loaded, and stay followed
 - **Checks a change index** (auto-generated, hash-based) before re-reading secondary files — unchanged files cost ~0
 - **Defers everything else** until it is actually needed
+- **One-line handover** — say "handover" at a task break; the next session picks up exactly there
 
 Measured on our own production system: recovery drops from **~44K to ~12K tokens** (~70% less). When the host already injects identity memory (e.g. Hermes), the duplicated read is skipped automatically — **~55-75% cumulative savings** (measured 2026-09-04).
 
@@ -114,8 +116,10 @@ Outputs: `memory_index.md` (readable) + `memory_index_state.json` (state — don
    - ✅ new change → read that file in full
    - ⏸ unchanged → index summary line only
 3. Consult L1 detail docs only when a task needs them.
-4. Report honestly with sources — list any role that came up empty; never claim a recovery that didn't happen.
-5. Context gauge — report real usage % when the platform exposes it (Hermes `/status`, Claude Code `/context`); nudge at 50% / 70% (full table in SKILL.md).
+4. **Rules alignment** — from the rules file just read, restate the imperative rules (do / don't) and write `.evermind/rules.json` for the guardrail. Optional hard enforcement: wire `scripts/rule_gate.py` into a platform hook (Claude Code PreToolUse example in SKILL.md).
+5. Report honestly with sources — list any role that came up empty; never claim a recovery that didn't happen.
+6. Context gauge — report real usage % when the platform exposes it (Hermes `/status`, Claude Code `/context`); nudge at 50% / 70% (full table in SKILL.md). Write the handover **before** recommending a switch.
+7. Handover — at any task break say **"handover"**: the agent writes `.evermind/handover.md` from the template; the next session reads it first.
 
 ## Repository layout
 
@@ -125,7 +129,10 @@ evermind/
 ├── README.md                # this file
 ├── config.example.yaml      # configuration template
 ├── scripts/
-│   └── memory_index.py      # change-index generator (pure stdlib, zero deps)
+│   ├── memory_index.py      # change-index generator (pure stdlib, zero deps)
+│   └── rule_gate.py         # optional action-time guardrail (reads .evermind/rules.json)
+├── assets/
+│   └── handover-template.md # handover note template
 ├── CHANGELOG.md
 ├── LICENSE                  # MIT-0
 └── version
@@ -133,7 +140,7 @@ evermind/
 
 ## Security
 
-- Discovery scans candidate paths by name only (metadata — no content); the index reads and hashes only files you listed (roles + extras). Never writes your memory files themselves (only `.evermind/discovery.json`, index md + state json)
+- Discovery scans candidate paths by name only (metadata — no content); the index reads and hashes only files you listed (roles + extras). Never writes your memory files themselves — its own outputs are `.evermind/discovery.json`, index md + state json, plus two optional agent-maintained files: `.evermind/rules.json` (extracted rules for the optional gate) and `.evermind/handover.md` (one-shot handover note, deleted after being read)
 - Nothing leaves your machine — no remote install pipelines, no script-to-shell execution
 - Python standard library only. PyYAML optional: when absent, a built-in fallback parser reads the config (nested `roles:`, extras, flat `role_*` keys) — no silent config loss
 
@@ -151,6 +158,6 @@ MIT-0 — free to use, modify, and sell.
 
 ---
 
-*Crafted by 天玄镜 (Evermind) · TXJ system*  
+*Crafted with ❤ by the Evermind team*  
 
 ⭐ Found this useful? Star the repo — it helps others find it. Found a bug? [Open an issue](https://github.com/ccy123abcd/evermind-ai-agent-memory/issues).

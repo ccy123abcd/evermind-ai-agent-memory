@@ -1,12 +1,12 @@
 ---
 name: evermind-ai-agent-memory
-version: 0.3.0
-description: "The token-saving switch for AI agents. Kills long-context anxiety — start a new chat anytime, tasks pick up seamlessly, nothing breaks. Chat goes to zero. Progress is fully kept. Your token bill roughly halves — every cent goes to real work. Two small extras: context gauge — see your real context usage at a glance; caring new-chat nudges — auto-alert when context runs long, auto-suggest when a task wraps up. Save tokens. Save money. Save worry. Measured: a full recovery costs ~44K tokens; with Evermind it's ~12K — ~70% less, with zero progress lost."
+version: 0.4.0
+description: "The token-saving switch for AI agents. Kills long-context anxiety — start a new chat anytime, tasks pick up seamlessly, nothing breaks. Chat goes to zero. Progress is fully kept. Your token bill roughly halves — every cent goes to real work. Extras: context gauge — see your real context usage at a glance; caring new-chat nudges — auto-alert when context runs long; rule memory — the do's and don'ts you told your agent are restated every session, and enforced wherever your platform supports action hooks; one-line handover — say \"handover\" at a task break and the next session picks up exactly there. Save tokens. Save money. Save worry. Measured: a full recovery costs ~44K tokens; with Evermind it's ~12K — ~70% less, with zero progress lost."
 author: Evermind
 license: MIT-0
 metadata:
   hermes:
-    tags: [memory, recovery, session, onboarding, context]
+    tags: [memory, recovery, session, onboarding, context, rules, handover]
     related_skills: []
 ---
 
@@ -28,6 +28,8 @@ Every new session feels like "day one at work"? This skill makes the agent read 
 ## What it gives you
 
 - 🧠 **No more lost context**: identity, rules, todos always loaded — nothing important silently dropped; new sessions resume where you left off
+- 📏 **Rules remembered**: the do's and don'ts you told your agent are re-stated at every recovery — and (where your platform supports hooks) enforced at action time. "It keeps forgetting I told it not to…" — that ends here
+- 🔁 **One-line handover**: say "handover" at any task break; the next session starts exactly where you stopped
 - ⚡ **Fast + cheap**: recovery cost ~44K → ~12K tokens (~70% less); with host-injected identity skipped, ~55-75% cumulative (measured 2026-09-04)
 - 🔒 **100% local**: pure local scripts, zero API cost, nothing leaves your machine
 - 📊 **Context health**: see your real context usage and get nudged before a session bloats (30/50/70% thresholds)
@@ -67,12 +69,14 @@ Discovered roles are cached in `.evermind/discovery.json` — the agent reads it
 
 1. **Step 0 — Discover (first time or when sources moved)**: run `python scripts/memory_index.py --discover .` — it locates your memory carriers by common conventions (candidate list lives in the script header constants) and writes `.evermind/discovery.json`. Python unavailable? Fall back to the hand-list below (derived from the script; the script is authoritative). At every recovery, first **stat the stored paths** — any missing/unreadable source triggers re-discovery (never reuse stale paths).
 2. **Read the L3 must-read files**: roles resolved in step 0/1 (rules, identity, todos, journal) + `must_read_extra`. Every one, no shortcuts. Host injected identity (Hermes/OpenClaw)? Mark `identity ✅ (host)` and skip the file probe.
+2b. **Rules alignment**: from the rules file(s) just read, extract every imperative rule the user stated (do X / never do Y). List them explicitly in your recovery report — this is the moment the user experiences as *"it remembered what I told it"*. Then write/refresh `.evermind/rules.json` (id, text, keywords per rule) so the guardrail can enforce them at action time (see Rules & guardrails). If the rules file is empty or has no imperative rules, say "no hard rules found" honestly.
 3. **Read the change index** `memory_index.md`:
    - ✅ new change → read that file in full
    - ⏸ unchanged → read only its index summary line ← **savings live here**
 4. **L1 on-demand**: consult detail docs only when a task actually needs them.
 5. **Context gauge**: report real context usage — query your platform (Hermes `/status`; Claude Code `/context`; others: see the platform table below). Never invent a percentage; if the platform exposes none, say so. Optionally append `context: N%` to your recovery report.
-6. **Report recovery honestly**: `identity ✅ (host) · rules ✅ CLAUDE.md · todos ✅ docs/TODO.md · journal ✅ journal/2026-09-04.md`. If a role came up empty, list it explicitly — never claim a full recovery that didn't happen.
+6. **Check for a handover note**: if `.evermind/handover.md` exists, read it first (it is the fast pointer to where the last session stopped), then **delete it** — a handover is a one-shot note; keeping it would make the third session read a stale pointer. Authority stays with todos/journal — the handover only accelerates.
+7. **Report recovery honestly**: `identity ✅ (host) · rules ✅ CLAUDE.md · todos ✅ docs/TODO.md · journal ✅ journal/2026-09-04.md · rules aligned: 3 (r1 never delete without asking · r2 reply in Chinese · r3 …)`. If a role came up empty, list it explicitly — never claim a full recovery that didn't happen.
 
 ### Context threshold nudges (30 / 50 / 70)
 
@@ -80,8 +84,8 @@ Check context usage at recovery and at long-task boundaries. Thresholds are tuna
 
 - **< 30%** — healthy, nothing to say
 - **30–50%** — fine; keep working
-- **50–70%** — suggest: "task boundary reached? Good moment to switch to a fresh session — recovery is ~12K tokens, nothing is lost."
-- **≥ 70%** — recommend: "wrap up the current task and switch — this context is near its ceiling."
+- **50–70%** — suggest: "task boundary reached? Good moment to switch to a fresh session — recovery is ~12K tokens, nothing is lost." (Write the handover first — step: say "handover" or write `.evermind/handover.md` — then suggest the switch.)
+- **≥ 70%** — recommend: "wrap up the current task and switch — this context is near its ceiling." (Handover first, then switch.)
 
 Switching is safe and cheap: that is the whole point of Evermind (recovery ≈ 12K tokens instead of tens of thousands of re-explaining).
 
@@ -95,6 +99,48 @@ Switching is safe and cheap: that is the whole point of Evermind (recovery ≈ 1
 | OpenClaw | session/context indicator (varies by build) |
 | unknown | report "this platform exposes no context gauge" — do not invent a number |
 
+## Rules & guardrails
+
+Evermind treats your rules as **memory too** — the most important kind. Two layers make them stick:
+
+**Alignment layer (every session).** At recovery (step 2b) the agent restates the imperative rules it found in your rules files — do's and don'ts alike. You see, in plain text, that what you set is loaded. No rule file yet? Write your rules in `CLAUDE.md`/`AGENTS.md`/your rules file — plain sentences work: *"Never delete files without asking."* *"Always reply in Chinese."* *"Ask before sending anything externally."*
+
+**Enforcement layer (where the platform supports it).** Prohibitions you never want broken ("never", "don't", "always ask first") get written to `.evermind/rules.json` (id / text / keywords), and a tiny local gate script checks every action before it runs:
+
+```bash
+python scripts/rule_gate.py --check "delete the whole project folder"
+# ⛔ blocked — violates rules you set: [r1] Never delete files without asking
+# exit code 2 → the platform hook refuses the action
+```
+
+**Claude Code** — wire it with a PreToolUse hook (settings `.claude/settings.json`):
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command",
+            "command": "python ~/.claude/skills/evermind/scripts/rule_gate.py" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+The gate reads the tool name + input from stdin, checks it against your rules, and exits 2 on a hit — Claude Code aborts the tool call. No hook support on your platform? The alignment layer still applies (the agent self-checks before actions) — but enforcement is only as hard as your platform allows.
+
+The gate is pure stdlib, fails open (no rules file → pass), and writes nothing. It only ever blocks *prohibitions* (never / don't / always-ask-first) — positive rules ("always do X") are carried by the alignment layer, since an action gate cannot enforce them mechanically.
+
+## Handover protocol
+
+Switching sessions is only free if the *next* session knows where the last one stopped. Say **"handover"** (or "交接/收尾") at any task break — a natural stopping point, a finished task, or when a context nudge suggests switching — and the agent writes `.evermind/handover.md` from the template (assets/handover-template.md): ✅ done (what matters next) · 📌 leftover (what's waiting, on whom) · 🔗 pointers (files/tasks that anchor it) · ➡️ next step. Each new handover **overwrites** the previous one; recovery reads it once and **deletes it** (step 6) — a consumed handover must never linger as a stale pointer.
+
+The nudge thresholds above already recommend switching at 50–70%; **before recommending a switch, the agent must write the handover first** — a nudge without a ready handover is just anxiety, not a safe suggestion. Recovery reads the handover if present (step 6); authority always stays with todos/journal, the handover is the fast pointer.
+
 ## Manual discovery fallback (Python unavailable)
 
 Look for, in order (the script header candidate constants are authoritative — this is a summary):
@@ -107,13 +153,15 @@ Look for, in order (the script header candidate constants are authoritative — 
 ## Files
 
 - `scripts/memory_index.py` — discovery + change-index generator (pure stdlib; `--discover` / `--list` / `--demo` / `--mode internal|auto|manual`)
+- `scripts/rule_gate.py` — optional action-time guardrail (reads `.evermind/rules.json`; `--check "desc"` or PreToolUse stdin; `--demo`)
+- `assets/handover-template.md` — handover note template
 - `config.example.yaml` — configuration template (mode / roles / extras)
-- Outputs: `.evermind/discovery.json` + `memory_index.md` + `memory_index_state.json`
+- Outputs: `.evermind/discovery.json` + `memory_index.md` + `memory_index_state.json` + (optional) `.evermind/rules.json` + `.evermind/handover.md`
 
 ## Security
 
 - Discovery scans candidate paths by **name only** (metadata, no content) and writes `.evermind/discovery.json`; the index reads and hashes only files you listed (roles + extras)
-- Never writes your memory files themselves (only discovery json + index md + state json)
+- Never writes your memory files themselves — its own outputs are limited to `.evermind/discovery.json`, the index md + state json, plus two optional files the agent maintains at your request: `.evermind/rules.json` (your extracted rules, for the optional gate) and `.evermind/handover.md` (your one-shot handover note, deleted after being read)
 - Nothing is uploaded anywhere — fully local, no remote install pipelines, no script-to-shell execution
 - Python standard library only. PyYAML optional: when absent, a built-in fallback parser reads the config (nested `roles:`, extras, flat `role_*` keys) — no silent config loss
 
