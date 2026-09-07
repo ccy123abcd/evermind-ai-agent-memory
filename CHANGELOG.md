@@ -13,7 +13,7 @@
 - **Rules alignment (alignment layer)**: recovery now extracts the imperative rules from the user's rules files and restates them explicitly in the recovery report — the user sees that the do's and don'ts they set are loaded every session ("it remembered what I told it"). Honest "no hard rules found" when the rules file has none.
 - **Action-time guardrail (enforcement layer)**: optional `scripts/rule_gate.py` reads `.evermind/rules.json` (written by the agent at recovery: id/text/keywords per rule) and blocks violating actions — `--check "description"` for scripts, or Claude Code PreToolUse JSON on stdin for hook wiring (example in SKILL.md). Exit 2 on a hit; pure stdlib; fails open (no rules file → pass); writes nothing.
 - **Handover protocol**: say "handover" (交接/收尾) at any task break → agent writes `.evermind/handover.md` from `assets/handover-template.md` (✅ done · 📌 leftover · 🔗 pointers · ➡️ next). Recovery reads it if present as the fast pointer; authority stays with todos/journal.
-- **Nudge upgrade**: context nudges at 50–70% and ≥70% now require the handover to be written *before* recommending a switch — a suggestion without a ready handover is not a safe suggestion.
+- **Nudge upgrade (ready-signal hard rule)**: context checks now happen at every visible reading (usage jumps between turns — 29% one turn, 49% the next), with pre-nudge bands approaching each threshold (25–30 / 45–50 / 65–70) so a jump never passes in silence; and **any** nudge — pre or full — goes out only after `.evermind/handover.md` has been refreshed, so a user who switches right after a nudge loses nothing.
 
 ### Changed
 - Storefront/SKILL.md copy adds "rule memory" and "one-line handover" to the value story; product positioning unchanged (memory first — rules are memory of the most important kind).
@@ -54,12 +54,12 @@
 
 ### Added
 - L2 read policy split: index entries whose one-line description already answers the need (role cards / member summaries) now require only the **index summary line**, not a full-file read — full reads reserved for substantive docs.
-- Single-source-of-truth note: index descriptions are display rows; authoritative one-line roles live in the roster table; agents self-evolving their SOULs must log the change and update the roster row.
+- Single-source-of-truth note: index descriptions are display rows; authoritative role summaries live in the roles table (config/discovery); agents maintaining their own rules/identity files must log the change and refresh the table.
 
 ### Changed
 - SKILL.md Usage step 2 & How-it-works L2 row updated to the split policy (previously "changed → read in full").
 - Honest-numbers wording aligned to the measured 2026-09-04 range (~55-75% cumulative for host-injected identity; retired the 85%/6.5K projection phrasing).
-- Install references updated to the final slug `evermind-ai-agent-memory` (brand residue `txj/tiered-memory` removed).
+- Install references updated to the final slug `evermind-ai-agent-memory` (old working titles removed).
 
 ### Fixed
 - (none)

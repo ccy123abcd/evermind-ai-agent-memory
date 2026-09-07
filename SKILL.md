@@ -1,7 +1,7 @@
 ---
 name: evermind-ai-agent-memory
 version: 0.4.0
-description: "The token-saving switch for AI agents. Kills long-context anxiety — start a new chat anytime, tasks pick up seamlessly, nothing breaks. Chat goes to zero. Progress is fully kept. Your token bill roughly halves — every cent goes to real work. Extras: context gauge — see your real context usage at a glance; caring new-chat nudges — auto-alert when context runs long; rule memory — the do's and don'ts you told your agent are restated every session, and enforced wherever your platform supports action hooks; one-line handover — say \"handover\" at a task break and the next session picks up exactly there. Save tokens. Save money. Save worry. Measured: a full recovery costs ~44K tokens; with Evermind it's ~12K — ~70% less, with zero progress lost."
+description: "The token-saving switch for AI agents. Kills long-context anxiety — start a new chat anytime, tasks pick up seamlessly, nothing breaks. Chat goes to zero. Progress is fully kept. Your token bill roughly halves — every cent goes to real work. Two small extras: context gauge — see your real context usage at a glance; caring new-chat nudges — auto-alert when context runs long, auto-suggest when a task wraps up. New in 0.4: rule memory — the do's and don'ts you told your agent are restated every session, and enforced wherever your platform supports action hooks; one-line handover — say \"handover\" at a task break and the next session picks up exactly there. Save tokens. Save money. Save worry. Measured: a full recovery costs ~44K tokens; with Evermind it's ~12K — ~70% less, with zero progress lost."
 author: Evermind
 license: MIT-0
 metadata:
@@ -78,14 +78,23 @@ Discovered roles are cached in `.evermind/discovery.json` — the agent reads it
 6. **Check for a handover note**: if `.evermind/handover.md` exists, read it first (it is the fast pointer to where the last session stopped), then **delete it** — a handover is a one-shot note; keeping it would make the third session read a stale pointer. Authority stays with todos/journal — the handover only accelerates.
 7. **Report recovery honestly**: `identity ✅ (host) · rules ✅ CLAUDE.md · todos ✅ docs/TODO.md · journal ✅ journal/2026-09-04.md · rules aligned: 3 (r1 never delete without asking · r2 reply in Chinese · r3 …)`. If a role came up empty, list it explicitly — never claim a full recovery that didn't happen.
 
-### Context threshold nudges (30 / 50 / 70)
+### Context threshold nudges
 
-Check context usage at recovery and at long-task boundaries. Thresholds are tunable in spirit, defaults:
+Check context usage **every time you see it** (at recovery, and after every user turn when your platform exposes a gauge) — usage is a snapshot that jumps between turns: this turn may read 29%, the next 49%. Never assume the last reading still holds, and never wait for a threshold to be crossed before speaking up. **Nudge when you are approaching a threshold too** — a jump can skip a band entirely.
 
-- **< 30%** — healthy, nothing to say
-- **30–50%** — fine; keep working
-- **50–70%** — suggest: "task boundary reached? Good moment to switch to a fresh session — recovery is ~12K tokens, nothing is lost." (Write the handover first — step: say "handover" or write `.evermind/handover.md` — then suggest the switch.)
-- **≥ 70%** — recommend: "wrap up the current task and switch — this context is near its ceiling." (Handover first, then switch.)
+**Hard rule — the nudge is the ready signal.** Before ANY nudge goes out — pre-nudge or full nudge — refresh `.evermind/handover.md` with a one-line snapshot of where work stands (current task · what's done · what's next). The user may switch sessions the moment they read the nudge, and they must lose nothing. A nudge without a ready handover is not a nudge — it is a trap. If the user then says "handover" or switches, the handover is already there.
+
+| Usage | What to say (handover is refreshed first, always) |
+|---|---|
+| < 25% | healthy — nothing to say |
+| 25–30% | pre-nudge: "context is approaching the 30% line — I've noted where we are, so a switch stays safe and cheap" |
+| 30–45% | fine — keep working; a task boundary is still a fine moment to switch |
+| 45–50% | pre-nudge: "approaching 50% — I've noted where we are; plan to wrap up the current task at its boundary and switch" |
+| 50–65% | suggest: "task boundary reached? Good moment to switch to a fresh session — recovery is ~12K tokens, nothing is lost. Handover is ready." |
+| 65–70% | pre-nudge: "approaching 70% — I've noted where we are; wind down the current task, the next boundary should be a switch" |
+| ≥ 70% | recommend: "wrap up the current task and switch — this context is near its ceiling. Handover is ready." |
+
+Thresholds are tunable in spirit; the bands above are the defaults. The principle: **never let a reading pass in silence just because it did not cross a line — and never nudge without a ready handover.**
 
 Switching is safe and cheap: that is the whole point of Evermind (recovery ≈ 12K tokens instead of tens of thousands of re-explaining).
 
