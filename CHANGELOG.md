@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-09-08
+
 ### Changed
 - **Single-source script refactor (0.4.1 pending)**: `scripts/memory_index.py` build/summary templates are now language-driven via a built-in zh/en word table — the published default stays English (`lang` defaults to en when absent), so external behaviour is unchanged from 0.4.0. The top-level `lang: en|zh` config key selects the display language, and the maintainers' private/internal layout (agent names, local paths, Chinese descriptors) moved entirely into their own private config file. Published package carries zero private content.
 

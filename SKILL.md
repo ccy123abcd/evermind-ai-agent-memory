@@ -1,6 +1,6 @@
 ---
 name: evermind-ai-agent-memory
-version: 0.4.0
+version: 0.4.1
 description: "The token-saving switch for AI agents. Kills long-context anxiety — start a new chat anytime, tasks pick up seamlessly, nothing breaks. Chat goes to zero. Progress is fully kept. Your token bill roughly halves — every cent goes to real work. Two small extras: context gauge — see your real context usage at a glance; caring new-chat nudges — auto-alert when context runs long, auto-suggest when a task wraps up. New in 0.4: rule memory — the do's and don'ts you told your agent are restated every session, and enforced wherever your platform supports action hooks; one-line handover — say \"handover\" at a task break and the next session picks up exactly there. Save tokens. Save money. Save worry. Measured: a full recovery costs ~44K tokens; with Evermind it's ~12K — ~70% less, with zero progress lost."
 author: Evermind
 license: MIT-0
