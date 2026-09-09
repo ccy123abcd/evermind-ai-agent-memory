@@ -118,7 +118,7 @@ Outputs: `memory_index.md` (readable) + `memory_index_state.json` (state — don
 3. Consult L1 detail docs only when a task needs them.
 4. **Rules alignment** — from the rules file just read, restate the imperative rules (do / don't) and write `.evermind/rules.json` for the guardrail. Optional hard enforcement: wire `scripts/rule_gate.py` into a platform hook (Claude Code PreToolUse example in SKILL.md).
 5. Report honestly with sources — list any role that came up empty; never claim a recovery that didn't happen.
-6. Context gauge — report real usage % when the platform exposes it (Hermes `/status`, Claude Code `/context`); check at every visible reading, nudge when approaching a band (25–30 / 45–50 / 65–70) as well as inside it, and **refresh `.evermind/handover.md` before any nudge goes out** — the nudge is the ready signal (full band table in SKILL.md).
+6. Context gauge — report real usage % when the platform exposes it (Hermes `/status`, Claude Code `/context`); check at every visible reading, nudge when approaching a band (25–30 / 45–50 / 65–70 by default) as well as inside it, and **refresh `.evermind/handover.md` before any nudge goes out** — the nudge is the ready signal (full band table in SKILL.md; **tune the lines via `nudge_thresholds` in config.yaml**, e.g. 30/50/70 → 35/55/75 for more headroom).
 7. Handover — at any task break say **"handover"**: the agent writes `.evermind/handover.md` from the template; the next session reads it first.
 
 ## Repository layout
@@ -143,6 +143,20 @@ evermind/
 - Discovery scans candidate paths by name only (metadata — no content); the index reads and hashes only files you listed (roles + extras). Never writes your memory files themselves — its own outputs are `.evermind/discovery.json`, index md + state json, plus two optional agent-maintained files: `.evermind/rules.json` (extracted rules for the optional gate) and `.evermind/handover.md` (one-shot handover note, deleted after being read)
 - Nothing leaves your machine — no remote install pipelines, no script-to-shell execution
 - Python standard library only. PyYAML optional: when absent, a built-in fallback parser reads the config (nested `roles:`, extras, flat `role_*` keys) — no silent config loss
+
+## FAQ
+
+**Why do I keep getting nudged to start a new session?**
+Context windows fill up as a conversation grows — replies slow down, early instructions get squeezed, and quality drops. Evermind's nudges (default lines at 30/50/70%) remind you *before* that happens, and every nudge is preceded by a refreshed `.evermind/handover.md`, so switching loses nothing. Recovery after a switch costs ~12K tokens instead of tens of thousands of re-explaining.
+
+**Can I change when I get nudged? Yes.**
+Copy `config.example.yaml` → `config.yaml` and set `nudge_thresholds` to your own lines, e.g. `[35, 55, 75]` if you prefer more headroom before being reminded. The agent reads it at recovery and uses your lines instead of the defaults. (No config file? The 30/50/70 defaults apply.)
+
+**A nudge said "Handover is ready" — do I have to do anything?**
+No. The handover note was already written for you. Just start a new session (or say "handover" first if you want to add anything); the next session picks up exactly where you stopped.
+
+**Does Evermind send my data anywhere?**
+No. Everything is local — discovery is name-only, the index hashes files you listed, nothing is uploaded. See Security.
 
 ## Roadmap (managed edition)
 

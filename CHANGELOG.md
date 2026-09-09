@@ -4,6 +4,9 @@
 
 ## [Unreleased]
 
+### Added
+- **User-tunable nudge thresholds (C30)**: context-switch nudges now read `nudge_thresholds` from `config.yaml` (default `[30, 50, 70]`) — users who want more headroom set e.g. `[35, 55, 75]`. SKILL.md documents the tuning knob; FAQ added to README (why nudged / how to change / handover ready / privacy).
+
 ## [0.4.1] - 2026-09-08
 
 ### Changed

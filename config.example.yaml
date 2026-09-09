@@ -45,3 +45,10 @@ tracked_files_extra:
 # Where the generated index + state file are written (default: next to the config).
 output_index: memory_index.md
 output_state: memory_index_state.json
+
+# Context-switch nudge thresholds (optional, percentages, ascending). The agent
+# checks context usage and nudges you to start a fresh session as usage climbs —
+# before any nudge it refreshes .evermind/handover.md so switching loses nothing.
+# Default when absent: [30, 50, 70]. More headroom? Raise them (e.g. [35, 55, 75]).
+# A pre-nudge band sits 5 points below each line. Tune to your own comfort.
+nudge_thresholds: [30, 50, 70]

@@ -32,7 +32,7 @@ Every new session feels like "day one at work"? This skill makes the agent read 
 - 🔁 **One-line handover**: say "handover" at any task break; the next session starts exactly where you stopped
 - ⚡ **Fast + cheap**: recovery cost ~44K → ~12K tokens (~70% less); with host-injected identity skipped, ~55-75% cumulative (measured 2026-09-04)
 - 🔒 **100% local**: pure local scripts, zero API cost, nothing leaves your machine
-- 📊 **Context health**: see your real context usage and get nudged as you approach the 30/50/70% lines (and well before a session bloats)
+- 📊 **Context health**: see your real context usage and get nudged as you approach the 30/50/70% lines by default (tunable via config) — and well before a session bloats
 
 ## How it works
 
@@ -74,7 +74,7 @@ Discovered roles are cached in `.evermind/discovery.json` — the agent reads it
    - ✅ new change → read that file in full
    - ⏸ unchanged → read only its index summary line ← **savings live here**
 4. **L1 on-demand**: consult detail docs only when a task actually needs them.
-5. **Context gauge**: report real context usage — query your platform (Hermes `/status`; Claude Code `/context`; others: see the platform table below). Never invent a percentage; if the platform exposes none, say so. Optionally append `context: N%` to your recovery report.
+5. **Context gauge**: report real context usage — query your platform (Hermes `/status`; Claude Code `/context`; others: see the platform table below). Never invent a percentage; if the platform exposes none, say so. Optionally append `context: N%` to your recovery report. **If `config.yaml` exists with `nudge_thresholds`, read it once and use those lines instead of the 30/50/70 defaults below** (this is how the user tunes when to be nudged).
 6. **Check for a handover note**: if `.evermind/handover.md` exists, read it first (it is the fast pointer to where the last session stopped), then **delete it** — a handover is a one-shot note; keeping it would make the third session read a stale pointer. Authority stays with todos/journal — the handover only accelerates.
 7. **Report recovery honestly**: `identity ✅ (host) · rules ✅ CLAUDE.md · todos ✅ docs/TODO.md · journal ✅ journal/2026-09-04.md · rules aligned: 3 (r1 never delete without asking · r2 reply in Chinese · r3 …)`. If a role came up empty, list it explicitly — never claim a full recovery that didn't happen.
 
@@ -83,6 +83,8 @@ Discovered roles are cached in `.evermind/discovery.json` — the agent reads it
 Check context usage **every time you see it** (at recovery, and after every user turn when your platform exposes a gauge) — usage is a snapshot that jumps between turns: this turn may read 29%, the next 49%. Never assume the last reading still holds, and never wait for a threshold to be crossed before speaking up. **Nudge when you are approaching a threshold too** — a jump can skip a band entirely.
 
 **Hard rule — the nudge is the ready signal.** Before ANY nudge goes out — pre-nudge or full nudge — refresh `.evermind/handover.md` with a one-line snapshot of where work stands (current task · what's done · what's next). The user may switch sessions the moment they read the nudge, and they must lose nothing. A nudge without a ready handover is not a nudge — it is a trap. If the user then says "handover" or switches, the handover is already there.
+
+**Thresholds are user-tunable.** The default three lines are **30 / 50 / 70%** with a pre-nudge band 5 points below each. Users who want more headroom can shift the whole ladder — e.g. set the first line to 35 (default example: 30/50/70 → 35/55/75) by editing the band table in this file or their config's `nudge_thresholds` if present. Whatever the numbers, keep the *shape*: a pre-nudge band below each line (line − 5), a calm mid-band, and an urgent top band ("switch now"). Defaults:
 
 | Usage | What to say (handover is refreshed first, always) |
 |---|---|
@@ -94,7 +96,7 @@ Check context usage **every time you see it** (at recovery, and after every user
 | 65–70% | pre-nudge: "approaching 70% — I've noted where we are; wind down the current task, the next boundary should be a switch" |
 | ≥ 70% | recommend: "wrap up the current task and switch — this context is near its ceiling. Handover is ready." |
 
-Thresholds are tunable in spirit; the bands above are the defaults. The principle: **never let a reading pass in silence just because it did not cross a line — and never nudge without a ready handover.**
+With custom thresholds (e.g. 35/55/75), the bands move to match: pre-nudge at line−5, calm below the first line, urgent at the top line. The principle never changes: **never let a reading pass in silence just because it did not cross a line — and never nudge without a ready handover.**
 
 Switching is safe and cheap: that is the whole point of Evermind (recovery ≈ 12K tokens instead of tens of thousands of re-explaining).
 
