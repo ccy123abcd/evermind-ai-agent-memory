@@ -4,8 +4,13 @@
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-09-11
+
 ### Added
 - **User-tunable nudge thresholds (C30)**: context-switch nudges now read `nudge_thresholds` from `config.yaml` (default `[30, 50, 70]`) — users who want more headroom set e.g. `[35, 55, 75]`. SKILL.md documents the tuning knob; FAQ added to README (why nudged / how to change / handover ready / privacy).
+
+### Changed
+- **Storefront copy rewritten for scenario matching**: the ClawHub `description` (storefront summary) now opens with the capability + measured numbers and then lists 6 explicit "Use when" trigger scenarios, so an agent can match its current situation instead of reading ad copy; a Chinese trigger line (中文触发) is added for the same reason. Consumers stay separate — README top keeps the human-facing capability + numbers narrative, SKILL.md first screen carries the condensed use-when / key commands / cost. GitHub repo description cleared of the retired projection figure (measured ~70% / 55-75% only).
 
 ## [0.4.1] - 2026-09-08
 

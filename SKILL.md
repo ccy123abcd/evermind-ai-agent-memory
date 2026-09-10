@@ -1,7 +1,7 @@
 ---
 name: evermind-ai-agent-memory
-version: 0.4.1
-description: "The token-saving switch for AI agents. Kills long-context anxiety — start a new chat anytime, tasks pick up seamlessly, nothing breaks. Chat goes to zero. Progress is fully kept. Your token bill roughly halves — every cent goes to real work. Two small extras: context gauge — see your real context usage at a glance; caring new-chat nudges — auto-alert when context runs long, auto-suggest when a task wraps up. New in 0.4: rule memory — the do's and don'ts you told your agent are restated every session, and enforced wherever your platform supports action hooks; one-line handover — say \"handover\" at a task break and the next session picks up exactly there. Save tokens. Save money. Save worry. Measured: a full recovery costs ~44K tokens; with Evermind it's ~12K — ~70% less, with zero progress lost."
+version: 0.4.2
+description: "Cross-session memory recovery for AI agents — your agent never cold-starts again.\nAlways-loaded identity & todos, hash-indexed conditional reads cut recovery cost ~70%\n(~55-75% cumulative when the host already injects identity). Pure local, zero deps.\n\nUse when:\n(1) A new chat asks \"where did we leave off?\" and you have no context\n(2) Context is filling up and you're about to hit the limit mid-task\n(3) User says \"I already told you this\"\n(4) You re-read the same identity/rules/todos files at every session start\n(5) Session start burns tens of thousands of tokens before real work begins\n(6) You need to hand a long task to a fresh session without losing progress\n中文触发:新对话\"接着上次\" / 上下文快满 / 用户说\"我说过了\" / 每轮重读同样的规则待办 / 开场烧掉几万 token / 长任务交接"
 author: Evermind
 license: MIT-0
 metadata:
@@ -11,6 +11,12 @@ metadata:
 ---
 
 # Evermind
+
+**Use when**: a new chat asks where you left off · context is filling up mid-task · the user says "I already told you this" · you re-read the same identity/rules/todos files every session · session start burns tens of thousands of tokens · you hand a long task to a fresh session.
+
+**Key commands**: `python scripts/memory_index.py` (discover + write the change index) · `python scripts/rule_gate.py --check "<action>"` (optional action-time rule gate) · say **"handover"** to snapshot where work stands.
+
+**Cost**: recovery ~44K → ~12K tokens (~70% less); ~55-75% cumulative when the host already injects identity (measured 2026-09-04). Pure local, zero API cost.
 
 Progressive memory recovery for AI agents: your assistant stops losing context between sessions, without re-reading everything every time. Evermind first **discovers where your memory actually lives** (your files, your layout), then hands the agent a **shift handover** at session start.
 
