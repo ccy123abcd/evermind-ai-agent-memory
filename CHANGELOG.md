@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-09-12
+
+### Changed
+- Publisher attribution corrected: `author` read `Evermind`; it is now `TXJ · 天玄镜 (Tianxuanjing)`, matching the companion skill `mode-switch-machine-stack`. README footer and the ClawHub storefront title (`--name`) updated to match. No behaviour change.
+- README: added a cross-link section to the companion skill, so the two published halves of the setup point at each other.
+
 ## [0.4.2] - 2026-09-11
 
 ### Added
