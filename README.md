@@ -166,6 +166,12 @@ No. Everything is local — discovery is name-only, the index hashes files you l
 
 **Don't want to self-configure?** The managed edition = zero-setup, full system, continuous updates. → [Managed edition: TBD]
 
+## Also by the same team (TXJ · 天玄镜)
+
+- **[Mode Switch Kit](https://github.com/ccy123abcd/mode-switch-machine-stack)** — one command flips your whole machine stack (VPN, background agents, local services, model tier) from a single YAML mode matrix. Its watchdogs repair the current mode and never revive what you switched off.
+
+Evermind and Mode Switch Kit are two blocks of the same private-assistant setup (memory and context recovery, todos, multi-agent gateways, watchdogs), published separately so you can evaluate one at a time. More blocks are coming, and eventually they ship as a single package — installing one is the cheap way to see whether the rest is for you.
+
 ## License
 
 MIT-0 — free to use, modify, and sell.
